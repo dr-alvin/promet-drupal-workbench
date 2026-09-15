@@ -10,6 +10,8 @@ services:
       AUDIT_REFERENCE_URL: "${AUDIT_REFERENCE_URL:-}"
       AUDIT_TEST_URL: "${AUDIT_TEST_URL:-}"
       AUDIT_SELECT: "${AUDIT_SELECT:-}"
+      AUDIT_ASYNC_CAPTURE_LIMIT: "${AUDIT_ASYNC_CAPTURE_LIMIT:-5}"
+      AUDIT_ASYNC_COMPARE_LIMIT: "${AUDIT_ASYNC_COMPARE_LIMIT:-4}"
     volumes:
       - "${AUDIT_CONFIG_DIR:?config directory required}:/config:ro"
       - "${AUDIT_OUTPUT:?output required}:/work"

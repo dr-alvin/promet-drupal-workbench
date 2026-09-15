@@ -747,7 +747,16 @@ class Workflow:
             for r in (self.home / "runs").glob("*/result/context.json"):
                 c = read(r)
                 if c.get("roots", {}).get("repository") == str((p / "site").resolve()):
-                    active = [e["name"] for e in c.get("extensions", []) if e.get("installed")]
+                    active = [
+                        e["name"]
+                        for e in c.get("extensions", [])
+                        if (
+                            e.get("installed")
+                            or e.get("configSplits")
+                            or e.get("inConfigSplit")
+                            or e.get("exported")
+                        )
+                    ]
                     context_obj = c
                     break
             return inspect_obsolete_packages(p / "site", active, context=context_obj)
@@ -1290,8 +1299,30 @@ class Workflow:
                     shutil.copy2(f, dest)
         if rec["exitCode"] != 0:
             err_detail = (rec.get("stderr") or rec.get("stdout") or "").strip()
-            last_lines = [line.strip() for line in err_detail.splitlines() if line.strip()]
-            summary_err = f": {last_lines[-1]}" if last_lines else ""
+            summary_err = ""
+            res_file = vo / "result.json" if (vo / "result.json").is_file() else ((out / "visual" / "result.json") if (out / "visual" / "result.json").is_file() else None)
+            if res_file:
+                try:
+                    res_data = read(res_file)
+                    st = res_data.get("status")
+                    msg = res_data.get("message")
+                    failures = res_data.get("failures", [])
+                    if st == "capture_failure" and mode == "reference":
+                        summary_err = ": Baseline stability verification detected non-deterministic visual differences"
+                    elif failures:
+                        failed_ids = [x.get("id") for x in failures[:3] if isinstance(x, dict) and x.get("id")]
+                        summary_err = f": {msg} ({', '.join(failed_ids)})"
+                    elif msg:
+                        summary_err = f": {msg}"
+                except Exception:
+                    pass
+            if not summary_err:
+                non_trace_lines = [
+                    line.strip()
+                    for line in err_detail.splitlines()
+                    if line.strip() and not line.strip().startswith("at ")
+                ]
+                summary_err = f": {non_trace_lines[-1]}" if non_trace_lines else ""
             raise Problem(
                 f"Browser verification failed{summary_err}; diagnostic images and coverage remain available in Reports"
             )

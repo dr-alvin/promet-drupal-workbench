@@ -224,6 +224,108 @@ def config_diff(before, after):
     return changes
 
 
+def discover_config_splits(config_dir: str | Path | None, repo_root: str | Path | None = None) -> dict:
+    """Discover Drupal config split definitions and their configured extensions."""
+    splits = {}
+    extensions = {}
+    searched_dirs = set()
+
+    candidate_dirs = []
+    if config_dir:
+        cd = Path(config_dir).resolve()
+        if cd.is_dir():
+            candidate_dirs.append(cd)
+            if cd.parent.is_dir() and cd.parent != cd:
+                candidate_dirs.append(cd.parent)
+    if repo_root:
+        rd = Path(repo_root).resolve()
+        for sub in ("config", "config/sync", "config/splits", "config/envs"):
+            p = rd / sub
+            if p.is_dir():
+                candidate_dirs.append(p)
+
+    split_files = []
+    for d in candidate_dirs:
+        if d in searched_dirs:
+            continue
+        searched_dirs.add(d)
+        for pattern in ("config_split.config_split.*.yml", "config_split.config_split.*.yaml"):
+            for f in sorted(d.glob(pattern)):
+                if f.is_file() and f not in split_files:
+                    split_files.append(f)
+
+    for sf in split_files:
+        try:
+            data = yaml_read(sf) or {}
+            if not isinstance(data, dict):
+                continue
+            split_id = data.get("id")
+            if not split_id:
+                parts = sf.stem.split(".")
+                split_id = parts[-1] if len(parts) >= 3 else sf.stem
+
+            mod_data = data.get("module", {})
+            if isinstance(mod_data, dict):
+                modules = list(mod_data.keys())
+            elif isinstance(mod_data, list):
+                modules = [str(m) for m in mod_data if m]
+            else:
+                modules = []
+
+            theme_data = data.get("theme", {})
+            if isinstance(theme_data, dict):
+                themes = list(theme_data.keys())
+            elif isinstance(theme_data, list):
+                themes = [str(t) for t in theme_data if t]
+            else:
+                themes = []
+
+            folder_val = data.get("folder")
+            if folder_val:
+                folder_candidates = [sf.parent / folder_val]
+                if config_dir:
+                    folder_candidates.append(Path(config_dir) / folder_val)
+                if repo_root:
+                    folder_candidates.append(Path(repo_root) / folder_val)
+                for fc in folder_candidates:
+                    if fc.is_dir():
+                        core_ext = fc / "core.extension.yml"
+                        if core_ext.is_file():
+                            try:
+                                ce_data = yaml_read(core_ext) or {}
+                                for m in ce_data.get("module", {}).keys():
+                                    if m not in modules:
+                                        modules.append(m)
+                                for t in ce_data.get("theme", {}).keys():
+                                    if t not in themes:
+                                        themes.append(t)
+                            except Exception:
+                                pass
+                        break
+
+            splits[split_id] = {
+                "id": split_id,
+                "label": data.get("label") or split_id,
+                "status": data.get("status", False),
+                "path": str(sf),
+                "modules": modules,
+                "themes": themes,
+                "folder": folder_val,
+            }
+
+            for m in modules:
+                extensions.setdefault(m, []).append(split_id)
+            for t in themes:
+                extensions.setdefault(t, []).append(split_id)
+        except Exception:
+            pass
+
+    return {
+        "splits": splits,
+        "extensions": extensions,
+    }
+
+
 def static_discovery(cfg):
     roots, comp = find_roots(cfg)
     selected = wrapper(cfg, roots)
@@ -307,10 +409,13 @@ def static_discovery(cfg):
     exported = {}
     if roots["config"] and Path(roots["config"], "core.extension.yml").is_file():
         exported = yaml_read(Path(roots["config"], "core.extension.yml"))
+    config_splits = discover_config_splits(roots.get("config"), roots.get("repository"))
+    split_exts = config_splits.get("extensions", {})
     active = result["runtime"]["commands"].get("activeExtensions", {}).get("data", {})
     result["configuration"] = {
         "exportedExtensions": exported or None,
         "activeExtensions": active or None,
+        "configSplits": config_splits.get("splits", {}),
     }
     installed_path = Path(roots["vendor"], "composer/installed.json")
     mappings = []
@@ -345,6 +450,14 @@ def static_discovery(cfg):
             )
             active_set = active.get(kind, {}) if isinstance(active, dict) else {}
             installed_state = name in active_set if active else None
+            in_splits = split_exts.get(name, [])
+            is_base_exported = (
+                name == exported.get("profile")
+                if kind == "profile"
+                else name in exported.get(kind, {})
+            ) if exported else False
+            is_split_exported = bool(in_splits)
+            is_exported = (is_base_exported or is_split_exported) if (exported or is_split_exported) else None
             result["extensions"].append(
                 {
                     "name": name,
@@ -353,7 +466,9 @@ def static_discovery(cfg):
                     "package": pkg,
                     "packageEvidence": "installed.json" if pkg else "unknown",
                     "installed": installed_state,
-                    "exported": name in exported.get(kind, {}) if exported else None,
+                    "exported": is_exported,
+                    "configSplits": in_splits,
+                    "inConfigSplit": bool(in_splits),
                     "coreConstraint": info.get("core_version_requirement"),
                     "dependencies": info.get("dependencies", []),
                     "compatibility": "unknown",
@@ -372,7 +487,9 @@ def static_discovery(cfg):
         {
             "name": n,
             "active": n in active.get("module", {}) if active else None,
-            "exported": n in exported.get("module", {}) if exported else None,
+            "exported": (n in exported.get("module", {}) or n in split_exts) if (exported or n in split_exts) else None,
+            "configSplits": split_exts.get(n, []),
+            "inConfigSplit": n in split_exts,
         }
         for n in ["action", "book", "forum", "statistics", "tour", "tracker"]
     ]
@@ -571,9 +688,12 @@ def discover(cfg, runtime=False, refresh=False, cache_dir=None):
     active = result["runtime"]["commands"].get("activeExtensions", {}).get("data", {})
     exported_file = Path(roots["config"], "core.extension.yml") if roots["config"] else None
     exported = yaml_read(exported_file) if exported_file and exported_file.is_file() else {}
+    config_splits = discover_config_splits(roots.get("config"), roots.get("repository"))
+    split_exts = config_splits.get("extensions", {})
     result["configuration"] = {
         "activeExtensions": active or None,
         "exportedExtensions": exported or None,
+        "configSplits": config_splits.get("splits", {}),
     }
     for e in result["extensions"]:
         e["installed"] = (
@@ -587,7 +707,16 @@ def discover(cfg, runtime=False, refresh=False, cache_dir=None):
         )
         e["presentOnDisk"] = True
         e["stateEvidence"] = "active_configuration" if active else "unknown"
-        e["exported"] = e["name"] in exported.get(e["type"], {}) if exported else None
+        in_splits = split_exts.get(e["name"], [])
+        e["configSplits"] = in_splits
+        e["inConfigSplit"] = bool(in_splits)
+        is_base_exported = (
+            e["name"] == exported.get("profile")
+            if e["type"] == "profile"
+            else e["name"] in exported.get(e["type"], {})
+        ) if exported else False
+        is_split_exported = bool(in_splits)
+        e["exported"] = (is_base_exported or is_split_exported) if (exported or is_split_exported) else None
     # Drupal's selected discovery path wins when several files share a machine name.
     discovered = result["runtime"]["commands"].get("extensions", {}).get("data", {})
     unique = {}
@@ -616,7 +745,9 @@ def discover(cfg, runtime=False, refresh=False, cache_dir=None):
     )
     for e in result["removedCoreDependencies"]:
         e["active"] = e["name"] in active.get("module", {}) if active else None
-        e["exported"] = e["name"] in exported.get("module", {}) if exported else None
+        e["exported"] = (e["name"] in exported.get("module", {}) or e["name"] in split_exts) if (exported or e["name"] in split_exts) else None
+        e["configSplits"] = split_exts.get(e["name"], [])
+        e["inConfigSplit"] = e["name"] in split_exts
     result["git"] = {
         "head": command(["git", "rev-parse", "HEAD"], roots["repository"]),
         "dirty": command(["git", "status", "--porcelain=v1"], roots["repository"]),

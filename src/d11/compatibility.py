@@ -417,6 +417,8 @@ def build(context, tool_checks, solver, patches, out, decisions=None, provider=N
             kind == "contrib"
             and extension.get("installed") is False
             and extension.get("exported") is False
+            and not extension.get("configSplits")
+            and not extension.get("inConfigSplit")
         ):
             status = "ready"
             recommended = "remove"
@@ -662,6 +664,8 @@ def build(context, tool_checks, solver, patches, out, decisions=None, provider=N
                 "installed": True,
                 "enabled": extension.get("installed"),
                 "exported": extension.get("exported"),
+                "configSplits": extension.get("configSplits", []),
+                "inConfigSplit": bool(extension.get("configSplits") or extension.get("inConfigSplit")),
                 "package": package,
                 "currentVersion": current,
                 "coreConstraint": extension.get("coreConstraint"),

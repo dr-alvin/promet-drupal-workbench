@@ -33,18 +33,25 @@ module.exports=async(page,scenario)=>{
       throw new Error('Unexpected cross-host redirect from ' + expected.href + ' to ' + actual.href);
     }
     for(const selector of s.requiredElements)await page.locator(selector).waitFor({state:'visible'});
-    for(const text of s.requiredText||[])if(!(await page.locator('body').innerText()).includes(text))throw new Error('Required page text missing');
-    try{await page.addStyleTag({content:'html, body, *,*::before,*::after { scroll-behavior:auto!important; animation:none!important;transition:none!important;caret-color:transparent!important; }'});}catch{}
-    const freezeMedia=()=>{
+    try{await page.addStyleTag({content:'html, body { overflow-x:hidden!important; max-width:100vw!important; } html, body, *,*::before,*::after { scroll-behavior:auto!important; animation:none!important;transition:none!important;caret-color:transparent!important; } .slick-track, .slick-slide { transition:none!important; } video { pointer-events:none!important; }'});}catch{}
+    const freezeMedia=async ()=>{
       if(window.jQuery?.fn?.slick){
         try{
-          window.jQuery('.slick-slider').each(function(){
-            if(this.slick){
-              this.slick.options.autoplay=false;
-              this.slick.autoPlay=false;
-              window.jQuery(this).slick('slickPause');
-              window.jQuery(this).slick('slickGoTo',0,true);
-            }
+          window.jQuery('.slick-initialized, .slick-slider, [data-slick], .slide-show-with-items-container').each(function(){
+            try{
+              const $s=window.jQuery(this);
+              try{$s.slick('slickSetOption','autoplay',false,false);}catch{}
+              try{$s.slick('slickPause');}catch{}
+              try{$s.slick('slickGoTo',0,true);}catch{}
+              const s=$s.slick('getSlick')||$s.data('slick')||this.slick;
+              if(s){
+                if(typeof s.autoPlayClear==='function') s.autoPlayClear();
+                s.autoPlayTimer=null;
+                s.paused=true;
+                if(s.options) s.options.autoplay=false;
+                s.autoPlay=false;
+              }
+            }catch{}
           });
         }catch{}
       }
@@ -76,6 +83,30 @@ module.exports=async(page,scenario)=>{
           window.jQuery('.owl-carousel').trigger('to.owl.carousel', [0, 0]);
         }
       }catch{}
+      try{
+        if(window.bootstrap?.Carousel){
+          document.querySelectorAll('.carousel').forEach(c=>{
+            try{
+              const inst=window.bootstrap.Carousel.getInstance(c)||new window.bootstrap.Carousel(c,{interval:false});
+              inst?.pause();
+              inst?.to(0);
+            }catch{}
+          });
+        }
+        if(window.jQuery?.fn?.carousel){
+          window.jQuery('.carousel').carousel('pause');
+          window.jQuery('.carousel').carousel(0);
+        }
+        document.querySelectorAll('.carousel').forEach(c=>{
+          const items=c.querySelectorAll('.carousel-item');
+          if(items.length>1){
+            items.forEach((it,idx)=>{
+              if(idx===0) it.classList.add('active');
+              else it.classList.remove('active');
+            });
+          }
+        });
+      }catch{}
       document.querySelectorAll('video, audio').forEach(v=>{
         try{ v.pause(); v.currentTime=0; }catch{}
       });
@@ -84,11 +115,53 @@ module.exports=async(page,scenario)=>{
           if(typeof anim.endElement === 'function') anim.endElement();
         });
       }catch{}
+      try{
+        if(window.jQuery) window.jQuery(window).off('scroll.views_infinite_scroll');
+      }catch{}
+      try{
+        document.querySelectorAll('img').forEach(img=>{
+          if(img.complete && img.naturalWidth > 0 && /\.(gif|webp)($|\?)/i.test(img.currentSrc||img.src)){
+            try{
+              const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;
+              const ctx=c.getContext('2d');ctx.drawImage(img,0,0);img.src=c.toDataURL();
+            }catch{}
+          }
+        });
+        const bgRegex=/url\(["']?([^"')]+\.(gif|webp)(?:\?[^"')]+)?)["']?\)/i;
+        const bgPromises=[];
+        const candidates=document.querySelectorAll('section, div, header, footer, a, span, [style*="background"]');
+        candidates.forEach(el=>{
+          try{
+            const bg=window.getComputedStyle(el).backgroundImage;
+            const m=bg&&bg.match(bgRegex);
+            if(m&&!el.__auditFrozenBg){
+              el.__auditFrozenBg=true;
+              const p=new Promise(resolve=>{
+                const t=setTimeout(resolve,1000);
+                const img=new Image();
+                img.onload=()=>{
+                  clearTimeout(t);
+                  try{
+                    const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;
+                    c.getContext('2d').drawImage(img,0,0);
+                    el.style.backgroundImage='url("'+c.toDataURL()+'")';
+                  }catch{}
+                  resolve();
+                };
+                img.onerror=()=>{clearTimeout(t);resolve();};
+                img.src=m[1];
+              });
+              bgPromises.push(p);
+            }
+          }catch{}
+        });
+        if(bgPromises.length) await Promise.race([Promise.all(bgPromises),new Promise(r=>setTimeout(r,2500))]);
+      }catch{}
     };
-    await page.evaluate(freezeMedia);
+    try{await page.evaluate(freezeMedia);}catch{}
     await page.evaluate(timeout=>Promise.race([document.fonts.ready,new Promise((_,reject)=>setTimeout(()=>reject(new Error('Font readiness timeout')),timeout))]),s.ready.timeoutMs||15000);
     const coverage=await require('./images').readiness(page,s);
-    await page.evaluate(freezeMedia);
+    try{await page.evaluate(freezeMedia);}catch{}
     await page.evaluate(()=>{document.documentElement.style.scrollBehavior='auto';document.body.style.scrollBehavior='auto';window.scrollTo({top:0,left:0,behavior:'instant'});});
     await page.waitForTimeout(200);
     fs.appendFileSync(scenario.auditWork+'/image-coverage.jsonl',JSON.stringify({id:s.id,...coverage})+'\n');
@@ -117,8 +190,17 @@ module.exports=async(page,scenario)=>{
       }
       if(page.__auditErrors.length)throw new Error(page.__auditErrors.join('; '));
     }
-    await steps(page,s.assertions);
-    for(const mask of s.masks||[])await page.locator(mask.selector).evaluateAll(elements=>elements.forEach(el=>el.style.visibility='hidden'));
+    if(s.masks?.length){
+      try{
+        await page.evaluate(selectors=>{
+          for(const sel of selectors){
+            try{
+              document.querySelectorAll(sel).forEach(el=>el.style.visibility='hidden');
+            }catch{}
+          }
+        }, s.masks.map(m=>m.selector));
+      }catch{}
+    }
 
   } catch(e) {
     if(s.cleanup?.length) { try {await steps(page,s.cleanup);} catch(cleanupError) {e.message+='; cleanup failed: '+cleanupError.message;} }

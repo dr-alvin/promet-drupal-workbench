@@ -835,6 +835,83 @@ class ProvusEcosystemProtectionTests(unittest.TestCase):
         self.assertEqual(decision["action"], "remove",
                          "Operator override 'remove' must take priority over Provus protection")
 
+    def test_config_split_module_not_removed_when_uninstalled(self):
+        """Modules in config split (e.g. 'live') must never get action:'remove' when uninstalled."""
+        from d11.auto_decide import DECISION_RULES
+
+        # 1. Compatible release candidate available
+        ext_with_candidate = {
+            "name": "acquia_purge",
+            "type": "module",
+            "source": "contrib",
+            "package": "drupal/acquia_purge",
+            "installed": False,
+            "exported": True,
+            "configSplits": ["live"],
+            "inConfigSplit": True,
+            "status": "update_available",
+            "currentVersion": "1.0.0",
+            "targetVersion": "^2.0.0",
+            "releaseCandidates": [{"version": "^2.0.0", "stability": "stable"}],
+            "dependencies": [],
+        }
+        ctx = {
+            "existing": None,
+            "is_clean": False,
+            "is_provus": False,
+            "manual_proposal": self.root / "no-proposal.json",
+            "patches": [],
+            "accept_prereleases": True,
+            "obsolete_modules": set(),
+            "replacements": {},
+        }
+        decision = None
+        for rule in DECISION_RULES:
+            decision = rule(ext_with_candidate, ctx)
+            if decision is not None:
+                break
+        self.assertIsNotNone(decision)
+        self.assertEqual(decision["action"], "compatible_release")
+        self.assertIn("live", decision["note"])
+
+        # 2. Already clean module
+        ext_clean = dict(ext_with_candidate)
+        ctx_clean = dict(ctx, is_clean=True)
+        decision_clean = None
+        for rule in DECISION_RULES:
+            decision_clean = rule(ext_clean, ctx_clean)
+            if decision_clean is not None:
+                break
+        self.assertIsNotNone(decision_clean)
+        self.assertEqual(decision_clean["action"], "keep")
+        self.assertIn("live", decision_clean["note"])
+
+        # 3. No release candidate found -> defer (never remove)
+        ext_no_release = dict(ext_with_candidate, targetVersion=None, releaseCandidates=[])
+        decision_defer = None
+        for rule in DECISION_RULES:
+            decision_defer = rule(ext_no_release, ctx)
+            if decision_defer is not None:
+                break
+        self.assertIsNotNone(decision_defer)
+        self.assertEqual(decision_defer["action"], "defer")
+        self.assertNotEqual(decision_defer["action"], "remove")
+
+    def test_config_split_discovery(self):
+        """discover_config_splits finds config_split definitions and modules."""
+        from d11.discovery import discover_config_splits
+        config_dir = self.root / "config" / "sync"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "config_split.config_split.live.yml").write_text(
+            "id: live\nlabel: Live\nstatus: false\nmodule:\n  acquia_purge: 0\n  shield: 0\n"
+        )
+        splits_info = discover_config_splits(config_dir, self.root)
+        self.assertIn("live", splits_info["splits"])
+        self.assertEqual(sorted(splits_info["splits"]["live"]["modules"]), ["acquia_purge", "shield"])
+        self.assertIn("acquia_purge", splits_info["extensions"])
+        self.assertEqual(splits_info["extensions"]["acquia_purge"], ["live"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

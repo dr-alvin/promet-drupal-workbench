@@ -136,7 +136,64 @@ def rule_provus_ecosystem(ext: dict, ctx: dict) -> dict | None:
     }
 
 
+def rule_config_split_protection(ext: dict, ctx: dict) -> dict | None:
+    """Protect modules configured in config splits (e.g. 'live', 'prod') from being removed.
+
+    When an extension is defined in a config split, it is required in specific environments
+    (such as live/production) even if uninstalled in the local database. It must never receive
+    action: "remove".
+    """
+    splits = ext.get("configSplits") or []
+    if not splits and not ext.get("inConfigSplit"):
+        return None
+
+    name = ext.get("name")
+    split_str = ", ".join(splits) if splits else "split"
+    target = ext.get("targetVersion")
+    rc_candidates = [rc.get("version") for rc in ext.get("releaseCandidates", []) if rc.get("version")]
+    is_clean = ctx["is_clean"]
+    accept_prereleases = ctx["accept_prereleases"]
+
+    if is_clean:
+        return {
+            "name": name,
+            "action": "keep",
+            "candidateId": None,
+            "candidateVersion": ext.get("currentVersion"),
+            "acceptRisk": False,
+            "note": f"Extension configured in config split ('{split_str}') — clean and retained in vendor",
+            "origin": "automatic",
+        }
+
+    candidate_version = target
+    if not candidate_version and rc_candidates:
+        candidate_version = rc_candidates[0]
+
+    if candidate_version:
+        return {
+            "name": name,
+            "action": "compatible_release",
+            "candidateId": None,
+            "candidateVersion": candidate_version,
+            "acceptRisk": accept_prereleases,
+            "note": f"Extension configured in config split ('{split_str}') — retained in vendor; update to D11-compatible release",
+            "origin": "automatic",
+        }
+
+    return {
+        "name": name,
+        "action": "defer",
+        "candidateId": None,
+        "candidateVersion": None,
+        "acceptRisk": False,
+        "note": f"Extension configured in config split ('{split_str}') — no D11 release found yet; retained in vendor, operator review required",
+        "origin": "automatic",
+    }
+
+
 def rule_obsolete_performance(ext: dict, ctx: dict) -> dict | None:
+    if ext.get("configSplits") or ext.get("inConfigSplit"):
+        return None
     name = ext.get("name")
     if name in ctx["obsolete_modules"] or ext.get("recommendedAction") == "remove":
         return {
@@ -272,6 +329,9 @@ def rule_validated_patch(ext: dict, ctx: dict) -> dict | None:
 
 
 def rule_uninstalled_cleanup(ext: dict, ctx: dict) -> dict | None:
+    if ext.get("configSplits") or ext.get("inConfigSplit"):
+        return None
+
     name = ext.get("name")
     src = ext.get("source")
     target = ext.get("targetVersion")
@@ -359,6 +419,7 @@ DECISION_RULES = [
     rule_operator_override,
     rule_removed_core_bridge,
     rule_provus_ecosystem,      # Provus ecosystem deps: never auto-remove
+    rule_config_split_protection, # Config split deps (e.g. live split): never auto-remove
     rule_obsolete_performance,
     rule_uninstalled_cleanup,
     rule_clean_extension,
@@ -406,20 +467,20 @@ def auto_decide(w, rid: str, accept_prereleases: bool = True, auto_remediate: bo
     active_extensions = list(report.get("extensions", []))
     installed_packages = {ext.get("package") for ext in active_extensions if ext.get("package")}
     uninstalled_roots = []
+    split_roots = []
     seen_packages = set()
     for ext in report.get("presentNotInstalled", []):
         pkg = ext.get("package")
-        if (
-            pkg
-            and pkg not in installed_packages
-            and pkg not in seen_packages
-            and ext.get("installed") is False
-            and ext.get("exported") is False
-        ):
+        if not pkg or pkg in installed_packages or pkg in seen_packages:
+            continue
+        if ext.get("configSplits") or ext.get("inConfigSplit"):
+            seen_packages.add(pkg)
+            split_roots.append(ext)
+        elif ext.get("installed") is False and ext.get("exported") is False:
             seen_packages.add(pkg)
             uninstalled_roots.append(ext)
 
-    for ext in active_extensions + uninstalled_roots:
+    for ext in active_extensions + uninstalled_roots + split_roots:
         name = ext.get("name")
         patches = [c for c in ext.get("patches", []) if c.get("approvalEligible")]
         manual_proposal = out / "manual-patches" / name / "proposal.json"

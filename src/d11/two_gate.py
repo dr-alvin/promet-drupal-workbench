@@ -440,7 +440,13 @@ def audit(w, pid, out, state):
     pkgs_with_installed = {
         e.get("package")
         for e in context.get("extensions", [])
-        if e.get("installed") and e.get("package")
+        if (
+            e.get("installed")
+            or e.get("exported")
+            or e.get("inConfigSplit")
+            or e.get("configSplits")
+        )
+        and e.get("package")
     }
     all_pkgs = {e.get("package") for e in context.get("extensions", []) if e.get("package")}
     uninstalled_pkgs = sorted(all_pkgs - pkgs_with_installed)

@@ -101,6 +101,36 @@ $err = FileSystemInterface::EXISTS_ERROR;
             self.assertEqual(res["uninstalledPackages"][0]["package"], "drupal/uninstalled_mod")
             self.assertEqual(res["recommendedCommand"], "composer remove drupal/uninstalled_mod")
 
+    def test_inspect_obsolete_packages_ignores_config_split(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = {
+                "name": "test/site",
+                "require": {
+                    "drupal/core": "^10",
+                    "drupal/installed_mod": "^1.0",
+                    "drupal/live_split_mod": "^1.0",
+                },
+            }
+            write(root / "composer.json", manifest)
+            context = {
+                "extensions": [
+                    {
+                        "name": "live_split_mod",
+                        "package": "drupal/live_split_mod",
+                        "installed": False,
+                        "exported": True,
+                        "configSplits": ["live"],
+                        "inConfigSplit": True,
+                    }
+                ]
+            }
+
+            res = inspect_obsolete_packages(root, active_extensions=["installed_mod"], context=context)
+            self.assertEqual(res["status"], "passed")
+            self.assertEqual(res["uninstalledCount"], 0)
+            self.assertIsNone(res["recommendedCommand"])
+
     def test_scaffold_delivery_budget(self):
         cfg = {}
         b = scaffold_delivery_budget(cfg)

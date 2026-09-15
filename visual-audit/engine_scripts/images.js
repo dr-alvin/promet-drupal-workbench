@@ -15,6 +15,9 @@ function imageState({selectors:requiredSelectors=[],wait=false}) {
 }
 async function readiness(page,s){
   await page.evaluate(()=>{
+    try {
+      if(window.jQuery) window.jQuery(window).off('scroll.views_infinite_scroll');
+    } catch{}
     document.querySelectorAll('img').forEach(img=>{
       img.loading='eager';
       if(img.dataset.src && !img.src) img.src=img.dataset.src;
@@ -22,11 +25,11 @@ async function readiness(page,s){
     });
     if(window.lazySizes?.loader?.checkElems) window.lazySizes.loader.checkElems();
   });
-  const bound={iterations:20,maxDistance:10000,timeoutMs:5000,...s.ready.scroll};
+  const bound={iterations:10,maxDistance:10000,timeoutMs:2500,...s.ready.scroll};
   const start=Date.now();let distance=0;
   for(let i=0;i<bound.iterations&&distance<bound.maxDistance&&Date.now()-start<bound.timeoutMs;i++){
-    if(await page.evaluate(()=>scrollY+innerHeight>=document.documentElement.scrollHeight))break;
-    const step=Math.min(400,bound.maxDistance-distance);await page.evaluate(n=>window.scrollBy({top:n,behavior:'instant'}),step);distance+=step;await page.waitForTimeout(100);
+    if(await page.evaluate(()=>scrollY+innerHeight>=document.documentElement.scrollHeight-50))break;
+    const step=Math.min(1000,bound.maxDistance-distance);await page.evaluate(n=>window.scrollBy({top:n,behavior:'instant'}),step);distance+=step;await page.waitForTimeout(40);
   }
   await page.evaluate(()=>{document.documentElement.style.scrollBehavior='auto';document.body.style.scrollBehavior='auto';window.scrollTo({top:0,left:0,behavior:'instant'});});
   await page.evaluate(()=>Promise.all(Array.from(document.images).filter(img=>!img.complete).map(img=>new Promise(res=>{img.onload=img.onerror=res;}))));

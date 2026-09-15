@@ -38,6 +38,25 @@ def inspect_obsolete_packages(
             p = ext.get("package")
             if p and ext.get("name"):
                 pkg_to_extensions.setdefault(p, set()).add(ext["name"])
+            if (
+                ext.get("configSplits")
+                or ext.get("inConfigSplit")
+                or ext.get("exported")
+            ) and ext.get("name"):
+                active_set.add(ext["name"])
+
+    try:
+        from .discovery import discover_config_splits
+        config_dir = (
+            context.get("roots", {}).get("config")
+            if context and isinstance(context.get("roots"), dict)
+            else None
+        )
+        splits_info = discover_config_splits(config_dir, site_root)
+        for ext_name in splits_info.get("extensions", {}):
+            active_set.add(ext_name)
+    except Exception:
+        pass
 
     installed_json = site_root / "vendor" / "composer" / "installed.json"
     if not pkg_to_extensions and installed_json.is_file():

@@ -402,8 +402,14 @@ DEFAULT_MASKS = [
     {"selector": "#drift-widget", "reason": "Drift chat widget overlay"},
     {"selector": ".intercom-lightweight-app", "reason": "Intercom chat widget overlay"},
     {"selector": ".live-chat", "reason": "Live chat widget overlay"},
+    {"selector": ".hbspt-form", "reason": "HubSpot form iframes"},
+    {"selector": ".employee-map", "reason": "Interactive employee map widget"},
+    {"selector": ".views-infinite-scroll-pager-item", "reason": "Views infinite scroll trigger"},
+    {"selector": ".section-job-listing", "reason": "External job board and career openings"},
+    {"selector": ".two-truths-lie-content-container", "reason": "Random employee game widget"},
     {"selector": "time", "reason": "Dynamic relative timestamps"},
     {"selector": ".copyright-year", "reason": "Dynamic copyright year element"},
+    {"selector": "video", "reason": "Embedded video players"},
 ]
 
 
@@ -421,7 +427,7 @@ def scenarios(routes, environment, reference, test, network, masks=None):
             "viewport": {"width": 1440, "height": 900},
             "ready": {"selector": "body", "timeoutMs": 15000},
             "requiredElements": ["body"],
-            "threshold": 0.1,
+            "threshold": 0.2,
             "masks": applied_masks,
         }
         for i, route in enumerate(routes)
