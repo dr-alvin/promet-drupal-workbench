@@ -23,7 +23,25 @@ bin/d11 doctor
 
 ---
 
-## 2. Option A: The Drupal Upgrade Workbench (Recommended UI)
+## 2. Workbench Installation (One-Time Setup)
+
+Setting up the workbench on your local machine takes under a minute:
+
+```bash
+# 1. Clone the workbench repository
+git clone <repo-url> promet-drupal-workbench
+cd promet-drupal-workbench
+
+# 2. Run the automated bootstrap (creates .venv and installs dependencies)
+./bin/d11 setup
+
+# 3. Verify prerequisite health
+./bin/d11 doctor
+```
+
+---
+
+## 3. Option A: The Drupal Upgrade Workbench (Recommended UI)
 
 The **Drupal Upgrade Workbench** is the main, centralized single-page visual application for managing upgrades across all your Drupal sites.
 
@@ -32,7 +50,6 @@ The **Drupal Upgrade Workbench** is the main, centralized single-page visual app
 
 ### Step 1: Start the Dashboard
 ```bash
-cd /path/to/promet-drupal-workbench
 ./bin/d11 dashboard --port 8765
 ```
 Open **[http://localhost:8765](http://localhost:8765)** in your browser.
@@ -70,7 +87,7 @@ Open **[http://localhost:8765](http://localhost:8765)** in your browser.
 
 ---
 
-## 3. Option B: CLI Automation Runner
+## 4. Option B: CLI Automation Runner
 
 For headless CI/CD pipelines or developers who prefer the terminal:
 

@@ -15,49 +15,82 @@ Works with **any Drupal project** across any local development environment (**Do
 
 ---
 
-## Installation & Setup
+---
+
+## ⚡ Quick Setup in 60 Seconds
+
+You only need **three commands** to get started:
+
+```bash
+# 1. Clone this repository
+git clone <repo-url> promet-drupal-workbench
+cd promet-drupal-workbench
+
+# 2. One-time bootstrap (creates .venv and installs all dependencies automatically)
+./bin/d11 setup
+
+# 3. Launch the visual workbench!
+./bin/d11 dashboard
+```
+
+> 🌐 Open **[http://localhost:8765](http://localhost:8765)** in your browser.
+> You're now ready to add any Drupal project and run safe, non-destructive upgrade rehearsals!
+
+---
+
+## Installation & Prerequisites
 
 ### System Requirements
 
 | Requirement | Notes |
 | :--- | :--- |
-| **macOS or Linux** | Windows via WSL2 supported |
-| **Python 3.10+** | `bin/d11` auto-creates a `.venv` — no manual install needed |
-| **Docker Desktop / Docker Engine** | Required for the disposable audit container and visual regression |
-| **Git** | For zero-copy upgrade checkpoints and rollback |
-| **Local Drupal stack** | Docksal, DDEV, Lando, or Docker Compose |
-| **AI provider key** | _(Optional)_ Only needed for AI-assisted custom code patching |
+| **Operating System** | macOS or Linux (Windows supported via WSL2) |
+| **Python 3.9+** | Standard system Python; `./bin/d11 setup` manages its own isolated `.venv` |
+| **Docker Engine / Desktop** | Required for the disposable audit MariaDB container and visual regression tests |
+| **Git** | For zero-copy upgrade checkpoints and 1-click rollback |
+| **Local Drupal 10 Project** | Running on Docksal (`fin`), DDEV (`ddev`), Lando (`lando`), or Docker Compose |
+| **AI Provider Key** | _(Optional)_ Only needed for AI custom code patches; can be added in `.env` or in the UI Settings tab |
 
 > [!NOTE]
-> No Composer, Drush, Node.js, or Backstop.js is required on the **host machine**. All heavy tooling runs inside Docker containers.
+> **Zero Host Tooling Required**: You do **not** need Composer, Drush, PHP, Node.js, or Backstop.js installed on your host machine. All heavy analysis and audit tooling executes inside disposable Docker containers.
 
-### 1. Clone the Workbench
+---
 
+### Step-by-Step Installation Guide
+
+#### 1. Clone the Workbench
+Clone the workbench repository into any directory on your machine (e.g. `~/Sites/promet-drupal-workbench` or `/Users/Shared/promet-drupal-workbench`):
 ```bash
-git clone <repo-url> drupal-upgrade-workbench
-cd drupal-upgrade-workbench
+git clone <repo-url> promet-drupal-workbench
+cd promet-drupal-workbench
 ```
 
-### 2. Configure Environment Variables
-
+#### 2. Bootstrap the Toolkit
+Run the setup command. It will automatically detect Python 3, create a dedicated `.venv`, and install required dependencies:
 ```bash
-cp .env.example .env
-# Open .env and add your AI provider key (optional — see .env.example for details)
+./bin/d11 setup
 ```
 
-The `.env` file is gitignored and never committed. You can also store credentials in `~/.d11/.env` to share them across projects on the same machine.
-
-### 3. Bootstrap & Verify
-
+#### 3. Verify Environment Health
+Run the built-in diagnostic doctor to verify Docker, Git, Python, and local runtime accessibility:
 ```bash
-# Auto-installs Python dependencies into .venv (runs automatically on first use)
-./bin/d11 --version
-
-# Run the prerequisite health check
 ./bin/d11 doctor
 ```
+If all checks pass (marked with green checkmarks), your machine is 100% ready.
 
-`./bin/d11 doctor` confirms Docker, Git, Python version, and any configured AI providers are ready.
+#### 4. (Optional) Configure AI Providers
+If you want to use Google Gemini, Claude, or OpenAI for automated custom code patch generation:
+```bash
+cp .env.example .env
+# Edit .env and paste your API key (e.g., GEMINI_API_KEY=your_key)
+```
+*(You can also configure API keys later directly in the Workbench UI under the **Settings** tab.)*
+
+#### 5. Launch the Dashboard
+```bash
+./bin/d11 dashboard --port 8765
+```
+*(Tip: Add `--no-open` if running on a remote server or headless environment).*
 
 ---
 

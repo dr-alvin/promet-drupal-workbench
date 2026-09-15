@@ -79,6 +79,16 @@ flowchart TD
 
 ---
 
+### 0. One-Time Workbench Setup
+
+```bash
+cd /path/to/promet-drupal-workbench
+./bin/d11 setup       # Auto-creates isolated .venv and installs all dependencies
+./bin/d11 doctor      # Verifies Docker, Git, Python environment health
+```
+
+---
+
 ### Method 1: The Drupal Upgrade Workbench (Recommended UI)
 
 The **Drupal Upgrade Workbench** is the interactive single-page visual application providing step-by-step control over project intake, scans, Gate 1 reviews, 1-click upgrades, visual diffs, and instant rollbacks. See [docs/dashboard.md](docs/dashboard.md) for the complete operator guide.

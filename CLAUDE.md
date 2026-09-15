@@ -68,10 +68,19 @@ d11-upgrade-tools/
 
 ## 3. Standard Development & Verification Commands
 
+### One-Time Environment Setup
+```bash
+cd /path/to/promet-drupal-workbench
+./bin/d11 setup      # Auto-creates .venv and installs requirements
+./bin/d11 doctor     # Verifies Docker, Git, Python environment health
+```
+
 ### Run Unit Tests
 ```bash
 cd /path/to/promet-drupal-workbench
 ./.venv/bin/pytest tests -q
+# or
+PYTHONPATH=src:tests .venv/bin/python -m unittest discover -s tests
 ```
 
 ### Start Dashboard Server
