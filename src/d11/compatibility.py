@@ -41,7 +41,7 @@ OBSOLETE_PERFORMANCE_MODULES = {
 
 
 def version_tuple(value):
-    match = re.fullmatch(r"v?(\d+)\.(\d+)(?:\.(\d+))?", str(value or ""))
+    match = re.fullmatch(r"v?(\d+)\.(\d+)(?:\.(\d+))?", str(value or "").strip())
     return tuple(int(part or 0) for part in match.groups()) if match else None
 
 
@@ -470,10 +470,29 @@ def build(context, tool_checks, solver, patches, out, decisions=None, provider=N
             decision = _safe_default(status, release_candidates, target, kind, fixes) or {}
             is_automatic = True
         selected = decision.get("action")
+        chosen_candidate = (
+            decision.get("candidateVersion") if selected == "compatible_release" else None
+        )
+        if selected == "keep":
+            effective_relation = "equal"
+        elif selected == "compatible_release" and chosen_candidate:
+            c_before, c_after = version_tuple(current), version_tuple(chosen_candidate)
+            effective_relation = (
+                "unknown"
+                if c_before is None or c_after is None
+                else "newer"
+                if c_after > c_before
+                else "equal"
+                if c_after == c_before
+                else "older"
+            )
+        else:
+            effective_relation = version_relation
+
         blockers = []
         if extension.get("installed") is None:
             blockers.append("Selected-site installation state is unknown")
-        if version_relation == "older":
+        if selected not in ("remove", "keep", "manual_remediation", "ai_manual_patch") and effective_relation == "older":
             blockers.append(
                 "Resolved candidate is older than installed; downgrade requires a separate reviewed remediation plan"
             )

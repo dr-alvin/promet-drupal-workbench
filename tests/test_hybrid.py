@@ -764,7 +764,7 @@ class HybridCompatibilityTests(unittest.TestCase):
             def read(self, *args):
                 return xml
 
-        values = _release_candidates("token", lambda *args, **kwargs: Response())
+        values = _release_candidates("test_token_candidate", lambda *args, **kwargs: Response())
         self.assertEqual(values[0]["version"], "1.9")
         self.assertEqual(values[0]["stability"], "stable")
         self.assertEqual(values[1]["stability"], "prerelease")

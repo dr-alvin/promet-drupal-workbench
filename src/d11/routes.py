@@ -435,10 +435,36 @@ def scenarios(routes, environment, reference, test, network, masks=None):
         }
         for i, item in enumerate(desktop[:MOBILE_ROUTES])
     ]
-    return {
+    result = {
         "environment": environment,
         "referenceUrl": reference,
         "testUrl": test,
-        "network": {"shared": network},
+        "network": {"shared": network} if network else {},
         "scenarios": desktop + mobile,
     }
+    hosts = set()
+    for u in (reference, test):
+        if u:
+            try:
+                parsed = urlparse(u)
+                if parsed.hostname and parsed.hostname not in (
+                    "localhost",
+                    "127.0.0.1",
+                    "::1",
+                    "web",
+                    "appserver",
+                ):
+                    hosts.add(parsed.hostname)
+            except Exception:
+                pass
+    if hosts:
+        result.setdefault("network", {})["extraHosts"] = [f"{h}:host-gateway" for h in sorted(hosts)]
+        tls_exceptions = [
+            h
+            for h in sorted(hosts)
+            if (reference and reference.startswith("https://"))
+            or (test and test.startswith("https://"))
+        ]
+        if tls_exceptions:
+            result["localTlsExceptions"] = tls_exceptions
+    return result

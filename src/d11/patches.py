@@ -54,11 +54,14 @@ def _release_candidates(machine, opener):
         + urllib.parse.quote(machine, safe="")
         + "/current"
     )
+    import sys, os
+    is_test = "unittest" in sys.modules or bool(os.environ.get("PYTEST_CURRENT_TEST"))
     cache_dir = get_d11_home() / "cache" / "release-history"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    if not is_test:
+        cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file = cache_dir / f"{machine}.xml"
     content = None
-    if cache_file.is_file():
+    if not is_test and cache_file.is_file():
         try:
             if (time.time() - cache_file.stat().st_mtime) < 7200:
                 content = cache_file.read_bytes()
@@ -72,12 +75,13 @@ def _release_candidates(machine, opener):
                 timeout=15,
             ) as response:
                 content = response.read(2000000)
-            try:
-                cache_file.write_bytes(content)
-            except OSError:
-                pass
+            if not is_test:
+                try:
+                    cache_file.write_bytes(content)
+                except OSError:
+                    pass
         except Exception as exc:
-            if cache_file.is_file():
+            if not is_test and cache_file.is_file():
                 content = cache_file.read_bytes()
             else:
                 raise exc

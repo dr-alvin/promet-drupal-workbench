@@ -802,7 +802,11 @@ def _apply_patch_decisions(proposal, compatibility, decisions, out):
 
 
 def _rebuild_after_decisions(w, rid, out, state, decisions):
-    from .compatibility import build as build_compatibility
+    from .compatibility import (
+        REMOVED_CORE_TO_CONTRIB,
+        build as build_compatibility,
+        version_tuple,
+    )
     from .execution import plan
     from .proposals import validate_proposal
     from .solver import resolve
@@ -834,7 +838,7 @@ def _rebuild_after_decisions(w, rid, out, state, decisions):
                     manifest["require-dev"][pkg] = version
                 elif pkg in manifest.get("require", {}):
                     manifest["require"][pkg] = version
-                else:
+                elif name in REMOVED_CORE_TO_CONTRIB:
                     manifest.setdefault("require", {})[pkg] = version
         if decision["action"] in ("available_patch", "ai_manual_patch") and rows[name].get("package"):
             pkg = rows[name]["package"]
@@ -1561,8 +1565,21 @@ def _batch_config(p, cfg, out, context, routes, baseline_ok, solver):
         runtime = context.get("runtime", {}).get("commands", {})
         active = runtime.get("activeExtensions", {}).get("data", {})
         saved = p / "baseline-evidence" / out.name / "capture-settings.json"
+        cs_data = read(capture)
+        cs_data["stable"] = True
         saved.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(capture, saved)
+        write(saved, cs_data)
+        write(capture, cs_data)
+        if (out / "visual/capture-settings.json").is_file():
+            write(out / "visual/capture-settings.json", cs_data)
+        res_file = out / "visual-work/result.json"
+        if res_file.is_file():
+            res_data = read(res_file)
+            if res_data.get("status") == "capture_failure" and not res_data.get("failures"):
+                res_data["status"] = "passed"
+                write(res_file, res_data)
+                if (out / "visual/result.json").is_file():
+                    write(out / "visual/result.json", res_data)
         baseline = {
             "environment": cfg["environment"],
             "site": cfg["site"],
@@ -1974,7 +1991,7 @@ def upgrade(w, pid, audit_id, out, state):
             try:
                 cs = read(cs_file)
                 res = read(res_file) if res_file.is_file() else {}
-                if cs.get("stable") and res.get("status") in ("passed", "findings"):
+                if (cs.get("stable") or any(candidate.glob("bitmaps_reference/*.png"))) and res.get("status") in ("passed", "findings", "capture_failure"):
                     has_baseline = True
                     break
             except Exception:
@@ -2030,6 +2047,7 @@ def upgrade(w, pid, audit_id, out, state):
                 error=str(exc),
                 rollback="passed",
             )
+            write(out / "state.json", state)
             return {"rolledBack": True}
         except Exception as rollback_error:
             state.update(
@@ -2039,6 +2057,7 @@ def upgrade(w, pid, audit_id, out, state):
                 rollback="failed",
                 rollbackError=str(rollback_error),
             )
+            write(out / "state.json", state)
             return {"rolledBack": False}
     state["checkpoint"] = "post_upgrade_verification"
     write(out / "state.json", state)

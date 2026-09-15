@@ -240,6 +240,8 @@ def require_nonprod(cfg):
 
 
 def relative(root, value):
+    if value is None or value == "":
+        return Path(root).resolve()
     p = (Path(root) / value).resolve()
     return p
 

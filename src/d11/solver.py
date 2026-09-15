@@ -76,18 +76,6 @@ def prepare_manifest(manifest, target=None, removals=None):
     for p in obsolete_removals:
         patches.pop(p, None)
     extra["patches"] = patches
-    # Patched packages have their core constraints fulfilled by the patch.
-    # In the disposable solver, replace them so composer resolves with Drupal 11.
-    for pkg in patches.keys():
-        if pkg.startswith("drupal/") and pkg != "drupal/core":
-            for values in sections.values():
-                if pkg in values:
-                    values.pop(pkg, None)
-            updated.setdefault("replace", {})[pkg] = "*"
-    for pkg in list(updated.get("replace", {}).keys()):
-        if pkg.startswith("drupal/") and pkg != "drupal/core":
-            for values in sections.values():
-                values.pop(pkg, None)
     updated["extra"] = extra
     config = dict(manifest.get("config", {}))
     platform = dict(config.get("platform", {}))
@@ -96,7 +84,9 @@ def prepare_manifest(manifest, target=None, removals=None):
         parts = [int(x) for x in re.findall(r"\d+", php_str)[:2]]
         if parts and (parts[0] < 8 or (parts[0] == 8 and parts[1] < 3)):
             platform["php"] = "8.3.0"
-        config["platform"] = platform
+    else:
+        platform["php"] = "8.3.0"
+    config["platform"] = platform
     allow = dict(config.get("allow-plugins", {}))
     allow["symfony/runtime"] = True
     if patches:
@@ -235,7 +225,6 @@ def resolve(
         "--no-plugins",
         "--no-interaction",
         "--ignore-platform-req=ext-*",
-        "--ignore-platform-req=php",
     ]
     rec = command(argv, solver, 1200)
     result = {

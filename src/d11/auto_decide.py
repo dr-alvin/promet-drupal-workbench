@@ -33,17 +33,21 @@ def rule_operator_override(ext: dict, ctx: dict) -> dict | None:
         action = existing["action"]
         cand_ver = existing.get("candidateVersion") or target
         rc_candidates = [rc.get("version") for rc in ext.get("releaseCandidates", []) if rc.get("version")]
-        if action == "compatible_release" and is_clean and (not cand_ver or cand_ver == ext.get("currentVersion")):
+        curr_tuple = version_tuple(ext.get("currentVersion"))
+        cand_tuple = version_tuple(cand_ver) if cand_ver else None
+        if action == "compatible_release" and is_clean and (not cand_ver or cand_ver == ext.get("currentVersion") or (curr_tuple and cand_tuple and cand_tuple <= curr_tuple)):
             action = "keep"
             cand_ver = ext.get("currentVersion")
-        elif action == "compatible_release" and rc_candidates and cand_ver not in rc_candidates:
-            cand_major = cand_ver.split(".")[0] if cand_ver else ""
-            match = next((v for v in rc_candidates if semver_match(v, cand_ver)), None)
-            if not match and cand_major:
-                same_major = [v for v in rc_candidates if v.split(".")[0] == cand_major]
-                if same_major:
-                    match = same_major[0]
-            cand_ver = match or rc_candidates[0]
+        elif action == "compatible_release":
+            if (curr_tuple and cand_tuple and cand_tuple < curr_tuple) or (rc_candidates and cand_ver not in rc_candidates):
+                valid_candidates = [
+                    v for v in rc_candidates
+                    if version_tuple(v) is None or curr_tuple is None or version_tuple(v) >= curr_tuple
+                ]
+                if valid_candidates:
+                    cand_ver = valid_candidates[0]
+                elif rc_candidates:
+                    cand_ver = rc_candidates[0]
         return {
             "name": name,
             "action": action,
@@ -295,11 +299,11 @@ DECISION_RULES = [
     rule_operator_override,
     rule_removed_core_bridge,
     rule_obsolete_performance,
+    rule_uninstalled_cleanup,
     rule_clean_extension,
     rule_known_replacement,
     rule_compatible_release,
     rule_validated_patch,
-    rule_uninstalled_cleanup,
     rule_defer_with_blocker,
 ]
 
@@ -342,7 +346,6 @@ def auto_decide(w, rid: str, accept_prereleases: bool = True, auto_remediate: bo
             pkg
             and pkg not in installed_packages
             and pkg not in seen_packages
-            and ext.get("recommendedAction") == "remove"
             and ext.get("installed") is False
             and ext.get("exported") is False
         ):
@@ -357,7 +360,6 @@ def auto_decide(w, rid: str, accept_prereleases: bool = True, auto_remediate: bo
 
         is_clean = (
             ext.get("status") == "ready"
-            and ext.get("scanned", True) is not False
             and not ext.get("upgradeStatus", {}).get("issueCount")
             and not ext.get("rector", {}).get("fixableCount")
         )

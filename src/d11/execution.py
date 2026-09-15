@@ -482,6 +482,17 @@ def execute(cfg, p, approval, output, resume=False, preparation=False):
                 write(state_file, run)
                 return run, 2
             record["command"] = command(step["argv"], cwd, step.get("timeout", 1800))
+            is_uninstall_noop = (
+                record["command"]["status"] != "passed"
+                and any(cmd in step["argv"] for cmd in ("pmu", "pm-uninstall", "pm:uninstall"))
+                and any(
+                    msg in (record["command"].get("stderr") or "") + (record["command"].get("stdout") or "")
+                    for msg in ("No modules to uninstall", "not installed", "already uninstalled")
+                )
+            )
+            if is_uninstall_noop:
+                record["command"]["status"] = "passed"
+                record["command"]["executionStatus"] = "passed"
             record["postconditions"] = []
             if record["command"]["status"] == "passed":
                 record["postconditions"] = [

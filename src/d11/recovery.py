@@ -226,6 +226,15 @@ def restore(w, pid, out):
             c_base = _get_composer_base()
             comp = None
             if c_base:
+                # Grant temporary write permissions before Composer install
+                for p, mode in [("web/sites/default", "777"), ("web/sites/default/settings.php", "666"), ("web/sites/default/services.yml", "666")]:
+                    subprocess.run(
+                        c_base[:1] + ["exec", "chmod", mode, p],
+                        cwd=source_dir,
+                        capture_output=True,
+                        text=True,
+                        errors="replace",
+                    )
                 # Allow symfony/runtime so PluginManager doesn't abort on orphaned Drupal 11 plugin in vendor
                 subprocess.run(
                     c_base + ["config", "--no-plugins", "allow-plugins.symfony/runtime", "true"],
@@ -239,6 +248,15 @@ def restore(w, pid, out):
                     text=True,
                     errors="replace",
                 )
+                # Ensure permissions are restored even if Composer fails
+                for p, mode in [("web/sites/default", "755"), ("web/sites/default/settings.php", "644"), ("web/sites/default/services.yml", "644")]:
+                    subprocess.run(
+                        c_base[:1] + ["exec", "chmod", mode, p],
+                        cwd=source_dir,
+                        capture_output=True,
+                        text=True,
+                        errors="replace",
+                    )
                 if comp.returncode != 0:
                     # Fallback to --no-plugins to ensure vendor packages can be downgraded/restored
                     comp_retry = subprocess.run(
@@ -250,6 +268,12 @@ def restore(w, pid, out):
                     )
                     if comp_retry.returncode == 0:
                         comp = comp_retry
+                        # Re-run normal install now that vendor plugins are restored so composer/installers maps core properly
+                        subprocess.run(
+                            c_base + ["install", "--no-interaction"],
+                            cwd=source_dir,
+                            capture_output=True,
+                        )
 
                 # Restore composer.json to exact pre-upgrade state and clean any untracked artifacts
                 if git_head:
