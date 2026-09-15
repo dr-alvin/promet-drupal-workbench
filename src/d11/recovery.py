@@ -242,7 +242,7 @@ def restore(w, pid, out):
                     capture_output=True,
                 )
                 comp = subprocess.run(
-                    c_base + ["install", "--no-interaction"],
+                    c_base + ["install", "--no-interaction", "--prefer-dist"],
                     cwd=source_dir,
                     capture_output=True,
                     text=True,
@@ -260,7 +260,7 @@ def restore(w, pid, out):
                 if comp.returncode != 0:
                     # Fallback to --no-plugins to ensure vendor packages can be downgraded/restored
                     comp_retry = subprocess.run(
-                        c_base + ["install", "--no-interaction", "--no-plugins"],
+                        c_base + ["install", "--no-interaction", "--prefer-dist", "--no-plugins"],
                         cwd=source_dir,
                         capture_output=True,
                         text=True,
@@ -270,7 +270,7 @@ def restore(w, pid, out):
                         comp = comp_retry
                         # Re-run normal install now that vendor plugins are restored so composer/installers maps core properly
                         subprocess.run(
-                            c_base + ["install", "--no-interaction"],
+                            c_base + ["install", "--no-interaction", "--prefer-dist"],
                             cwd=source_dir,
                             capture_output=True,
                         )
