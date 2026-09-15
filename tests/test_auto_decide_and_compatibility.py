@@ -678,6 +678,163 @@ class AutoDecideAndCompatibilityTests(unittest.TestCase):
         self.assertIn("drupal/symfony_mailer", decision["note"])
 
 
+class ProvusEcosystemProtectionTests(unittest.TestCase):
+    """Verify that Provus ecosystem modules are never auto-assigned action:'remove'."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        # Provus project composer.json
+        (self.root / "composer.json").write_text(
+            json.dumps({
+                "name": "promet/provus-drupal",
+                "require": {
+                    "drupal/core-recommended": "^10.3",
+                    "drupal/blazy": "4.0.x-dev",
+                    "drupal/layout_builder_block_clone": "^1.0",
+                    "drupal/lb_copy_section": "^1.0",
+                    "drupal/webform_spam_words": "^1.0",
+                    "drupal/layout_builder_reorder": "^1.0",
+                }
+            })
+        )
+        (self.root / "composer.lock").write_text(json.dumps({"packages": []}))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _make_uninstalled_ext(self, name, target_version="1.0.1"):
+        return {
+            "name": name,
+            "type": "module",
+            "source": "contrib",
+            "package": f"drupal/{name}",
+            "installed": False,
+            "exported": False,
+            "status": "update_available",
+            "currentVersion": "1.0.0",
+            "targetVersion": target_version,
+            "releaseCandidates": [{"version": target_version, "stability": "stable"}],
+            "dependencies": [],
+        }
+
+    def _build_report_and_run_rules(self, ext_name, is_provus=True):
+        from d11.auto_decide import DECISION_RULES
+        from d11.compatibility import is_provus_project, PROVUS_ECOSYSTEM_MODULES
+
+        ext = self._make_uninstalled_ext(ext_name)
+        is_clean = (
+            ext.get("status") == "ready"
+            and not ext.get("upgradeStatus", {})
+            and not ext.get("rector", {})
+        )
+        ctx = {
+            "existing": None,
+            "is_clean": is_clean,
+            "is_provus": is_provus,
+            "manual_proposal": self.root / "no-proposal.json",
+            "patches": [],
+            "accept_prereleases": True,
+            "obsolete_modules": set(),
+            "replacements": {},
+        }
+        decision = None
+        for rule in DECISION_RULES:
+            decision = rule(ext, ctx)
+            if decision is not None:
+                break
+        return decision
+
+    def test_provus_detection_by_composer_name(self):
+        """is_provus_project returns True for promet/provus-drupal composer.json."""
+        from d11.compatibility import is_provus_project
+        result = is_provus_project(site_root=self.root, context={})
+        self.assertTrue(result, "Expected Provus project detection via composer.json name")
+
+    def test_non_provus_not_detected(self):
+        """is_provus_project returns False for a generic Drupal project."""
+        from d11.compatibility import is_provus_project
+        (self.root / "composer.json").write_text(
+            json.dumps({"name": "my-org/my-drupal-site", "require": {"drupal/core-recommended": "^10.3"}})
+        )
+        result = is_provus_project(site_root=self.root, context={})
+        self.assertFalse(result, "Generic project should not be detected as Provus")
+
+    def test_provus_ecosystem_module_not_removed_when_uninstalled(self):
+        """Provus ecosystem modules must never get action:'remove' even when uninstalled."""
+        for mod in ("layout_builder_block_clone", "lb_copy_section", "webform_spam_words",
+                    "layout_builder_reorder", "blazy", "slick", "slick_ui"):
+            with self.subTest(module=mod):
+                decision = self._build_report_and_run_rules(mod, is_provus=True)
+                self.assertIsNotNone(decision, f"No decision produced for {mod}")
+                self.assertNotEqual(
+                    decision["action"], "remove",
+                    f"Provus module '{mod}' must not be auto-assigned 'remove', got: {decision}"
+                )
+                self.assertIn(
+                    decision["action"], ("keep", "compatible_release", "defer"),
+                    f"Provus module '{mod}' should be keep/compatible_release/defer, got: {decision['action']}"
+                )
+
+    def test_non_provus_uninstalled_module_still_removed(self):
+        """On a non-Provus project, uninstalled modules without releases still get 'remove'."""
+        ext = {
+            "name": "some_random_module",
+            "type": "module",
+            "source": "contrib",
+            "package": "drupal/some_random_module",
+            "installed": False,
+            "exported": False,
+            "status": "not_installed",
+            "currentVersion": "1.0.0",
+            "targetVersion": None,
+            "releaseCandidates": [],
+            "dependencies": [],
+        }
+        from d11.auto_decide import DECISION_RULES
+        ctx = {
+            "existing": None,
+            "is_clean": False,
+            "is_provus": False,
+            "manual_proposal": self.root / "no-proposal.json",
+            "patches": [],
+            "accept_prereleases": True,
+            "obsolete_modules": set(),
+            "replacements": {},
+        }
+        decision = None
+        for rule in DECISION_RULES:
+            decision = rule(ext, ctx)
+            if decision is not None:
+                break
+        self.assertIsNotNone(decision)
+        self.assertEqual(decision["action"], "remove",
+                         "Non-Provus uninstalled module without release should be 'remove'")
+
+    def test_operator_override_still_takes_priority(self):
+        """An operator 'remove' override for a Provus module must be respected."""
+        from d11.auto_decide import DECISION_RULES
+        ext = self._make_uninstalled_ext("blazy")
+        is_clean = False
+        ctx = {
+            "existing": {"origin": "operator", "action": "remove"},
+            "is_clean": is_clean,
+            "is_provus": True,
+            "manual_proposal": self.root / "no-proposal.json",
+            "patches": [],
+            "accept_prereleases": True,
+            "obsolete_modules": set(),
+            "replacements": {},
+        }
+        decision = None
+        for rule in DECISION_RULES:
+            decision = rule(ext, ctx)
+            if decision is not None:
+                break
+        # rule_operator_override fires first and must win
+        self.assertEqual(decision["action"], "remove",
+                         "Operator override 'remove' must take priority over Provus protection")
+
+
 if __name__ == "__main__":
     unittest.main()
-

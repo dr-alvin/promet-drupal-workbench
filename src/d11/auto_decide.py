@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .auto_remediate import generate_remediation_proposals
 from .common import Problem, read, write
-from .compatibility import OBSOLETE_PERFORMANCE_MODULES, REMOVED_CORE_TO_CONTRIB, semver_match, version_tuple
+from .compatibility import OBSOLETE_PERFORMANCE_MODULES, PROVUS_ECOSYSTEM_MODULES, REMOVED_CORE_TO_CONTRIB, is_provus_project, semver_match, version_tuple
 from .knowledge import get_obsolete_modules, get_replacements
 from .two_gate import compatibility_report, decide
 
@@ -74,6 +74,66 @@ def rule_removed_core_bridge(ext: dict, ctx: dict) -> dict | None:
             "origin": "automatic",
         }
     return None
+
+
+def rule_provus_ecosystem(ext: dict, ctx: dict) -> dict | None:
+    """Protect Provus ecosystem dependencies from being auto-removed.
+
+    When the project is a Provus distribution, modules in
+    ``PROVUS_ECOSYSTEM_MODULES`` must never receive ``action:"remove"``
+    automatically.  They can remain uninstalled in Drupal — kept at the
+    Composer/vendor level — unless the operator explicitly overrides the
+    decision.
+    """
+    if not ctx.get("is_provus"):
+        return None
+
+    name = ext.get("name")
+    if name not in PROVUS_ECOSYSTEM_MODULES:
+        return None
+
+    # If there is a clean D11-compatible release available, recommend it.
+    target = ext.get("targetVersion")
+    rc_candidates = [rc.get("version") for rc in ext.get("releaseCandidates", []) if rc.get("version")]
+    is_clean = ctx["is_clean"]
+    accept_prereleases = ctx["accept_prereleases"]
+
+    if is_clean:
+        return {
+            "name": name,
+            "action": "keep",
+            "candidateId": None,
+            "candidateVersion": ext.get("currentVersion"),
+            "acceptRisk": False,
+            "note": "Provus ecosystem dependency — already Drupal 11 compatible; retained in vendor",
+            "origin": "automatic",
+        }
+
+    candidate_version = target
+    if not candidate_version and rc_candidates:
+        candidate_version = rc_candidates[0]
+
+    if candidate_version:
+        return {
+            "name": name,
+            "action": "compatible_release",
+            "candidateId": None,
+            "candidateVersion": candidate_version,
+            "acceptRisk": accept_prereleases,
+            "note": "Provus ecosystem dependency — retained in vendor; update to D11-compatible release",
+            "origin": "automatic",
+        }
+
+    # No release candidate yet — defer rather than remove.
+    return {
+        "name": name,
+        "action": "defer",
+        "candidateId": None,
+        "candidateVersion": None,
+        "acceptRisk": False,
+        "note": "Provus ecosystem dependency — no D11 release found yet; retained in vendor, operator review required",
+        "origin": "automatic",
+    }
 
 
 def rule_obsolete_performance(ext: dict, ctx: dict) -> dict | None:
@@ -298,6 +358,7 @@ def rule_defer_with_blocker(ext: dict, ctx: dict) -> dict | None:
 DECISION_RULES = [
     rule_operator_override,
     rule_removed_core_bridge,
+    rule_provus_ecosystem,      # Provus ecosystem deps: never auto-remove
     rule_obsolete_performance,
     rule_uninstalled_cleanup,
     rule_clean_extension,
@@ -336,6 +397,12 @@ def auto_decide(w, rid: str, accept_prereleases: bool = True, auto_remediate: bo
     obsolete_mods = set(get_obsolete_modules(target_ver)) | set(OBSOLETE_PERFORMANCE_MODULES)
     known_replacements = get_replacements(target_ver)
 
+    # Detect Provus project once for the whole run — avoids repeated filesystem I/O.
+    source_path = cfg.get("sourcePath") or str(site_root)
+    _provus_ctx = {"extensions": report.get("extensions", [])}
+    _provus_ctx.update(context)
+    _is_provus = is_provus_project(site_root=source_path, context=_provus_ctx)
+
     active_extensions = list(report.get("extensions", []))
     installed_packages = {ext.get("package") for ext in active_extensions if ext.get("package")}
     uninstalled_roots = []
@@ -367,6 +434,7 @@ def auto_decide(w, rid: str, accept_prereleases: bool = True, auto_remediate: bo
         ctx = {
             "existing": existing,
             "is_clean": is_clean,
+            "is_provus": _is_provus,
             "manual_proposal": manual_proposal,
             "patches": patches,
             "accept_prereleases": accept_prereleases,

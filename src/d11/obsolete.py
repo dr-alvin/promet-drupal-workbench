@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from .common import read
+from .compatibility import PROVUS_ECOSYSTEM_MODULES, is_provus_project
+
 
 IGNORE_PACKAGES = {
     "drupal/core",
@@ -55,6 +57,17 @@ def inspect_obsolete_packages(
         except Exception:
             pass
 
+    # Detect Provus project once so ecosystem modules are never flagged for removal.
+    _context_with_exts = dict(context or {})
+    if "extensions" not in _context_with_exts:
+        # Build a minimal extension list from the pkg_to_extensions map.
+        _context_with_exts["extensions"] = [
+            {"name": ext_name}
+            for pkg_exts in pkg_to_extensions.values()
+            for ext_name in pkg_exts
+        ]
+    _is_provus = is_provus_project(site_root=site_root, context=_context_with_exts)
+
     uninstalled = []
     required_packages = []
 
@@ -65,6 +78,13 @@ def inspect_obsolete_packages(
             required_packages.append((pkg, section, constraint))
 
     for pkg, section, constraint in required_packages:
+        # Never suggest removing a Provus ecosystem package from a Provus project.
+        if _is_provus:
+            project_name = pkg.split("/", 1)[1].replace("-", "_")
+            pkg_exts = pkg_to_extensions.get(pkg, {project_name})
+            if pkg_exts & PROVUS_ECOSYSTEM_MODULES:
+                continue
+
         extensions = pkg_to_extensions.get(pkg)
         if extensions:
             is_active = any(ext in active_set for ext in extensions)

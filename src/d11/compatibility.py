@@ -39,6 +39,64 @@ OBSOLETE_PERFORMANCE_MODULES = {
     "fastclick",
 }
 
+# Modules that are Provus ecosystem dependencies. These must never be
+# auto-assigned action:"remove" during an upgrade scan, even when they are
+# uninstalled in the Drupal database. They can remain uninstalled (and
+# untouched in vendor/) unless a developer explicitly overrides the decision.
+PROVUS_ECOSYSTEM_MODULES = {
+    "blazy",
+    "blazy_ui",
+    "slick",
+    "slick_ui",
+    "layout_builder_block_clone",
+    "lb_copy_section",
+    "webform_spam_words",
+    "layout_builder_reorder",
+    "provus_core",
+    "provus_blocks",
+    "provus_content",
+    "provus_content_landing_page",
+    "promet_provus_blocks",
+    "gin_lb",
+    "bootstrap_layout_builder",
+    "bootstrap_styles",
+}
+
+
+def is_provus_project(site_root: "Path | None" = None, context: dict | None = None) -> bool:
+    """Return True when the project is a Provus distribution.
+
+    Detection heuristics (any one is sufficient):
+    1. ``composer.json`` root ``"name"`` starts with ``promet/provus``.
+    2. The active extension list contains ``provus_core`` or ``provus_blocks``.
+    3. The ``context`` dict carries an explicit ``"isProvus": true`` flag.
+    """
+    if context and context.get("isProvus"):
+        return True
+
+    # Check active extensions passed in context
+    if context:
+        exts = context.get("extensions") or []
+        active_names = {e.get("name") for e in exts if e.get("name")}
+        if active_names & {"provus_core", "provus_blocks"}:
+            return True
+
+    # Check composer.json project name
+    if site_root is not None:
+        try:
+            import json as _json
+            cj = Path(site_root) / "composer.json"
+            if cj.is_file():
+                data = _json.loads(cj.read_text(encoding="utf-8", errors="replace"))
+                name = data.get("name", "")
+                if isinstance(name, str) and name.startswith("promet/provus"):
+                    return True
+        except Exception:
+            pass
+
+    return False
+
+
 
 def version_tuple(value):
     match = re.fullmatch(r"v?(\d+)\.(\d+)(?:\.(\d+))?", str(value or "").strip())
