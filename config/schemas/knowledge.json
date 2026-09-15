@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "targetVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "type": "integer"
+        },
+        "minimum": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "major",
+        "minimum"
+      ],
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "constraint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "infoYml": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "constraint",
+        "infoYml"
+      ],
+      "additionalProperties": false
+    },
+    "removedCoreExtensions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "patchSearchTerm": {
+      "type": "string",
+      "minLength": 1
+    },
+    "defaultBranch": {
+      "type": "string",
+      "minLength": 1
+    },
+    "deprecationRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1
+          },
+          "replacement": {
+            "type": "string"
+          },
+          "fileType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern",
+          "replacement"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "properties": {
+        "php": {
+          "type": ["string", "object"]
+        },
+        "databases": {
+          "type": "object"
+        },
+        "drush": {
+          "type": ["string", "object"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "obsoleteModules": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "removedCorePackages": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "replacements": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "targetVersion",
+    "source",
+    "target",
+    "removedCoreExtensions",
+    "patchSearchTerm",
+    "defaultBranch"
+  ],
+  "additionalProperties": false
+}

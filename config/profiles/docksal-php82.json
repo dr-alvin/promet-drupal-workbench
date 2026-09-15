@@ -1,0 +1,28 @@
+{
+  "id": "docksal-php82",
+  "name": "Docksal PHP 8.2 / MariaDB 10.11",
+  "destination": "Managed Docksal images · PHP 8.2 / MariaDB 10.11",
+  "php": {
+    "version": "8.2",
+    "supportedPattern": "^8\\.[12]\\."
+  },
+  "database": {
+    "type": "MariaDB",
+    "version": "10.11",
+    "supportedTypes": [
+      "MariaDB",
+      "MySQL"
+    ],
+    "supportedPattern": "^(?:10\\.(?:[3-9]|10|11)|11\\.|8\\.[0-9]+)"
+  },
+  "images": {
+    "cli": "docksal/cli:php8.2-3.12",
+    "db": "docksal/mariadb:10.11-1.4",
+    "web": "docksal/apache:2.4-2.5",
+    "memcached": "memcached:1.6-alpine"
+  },
+  "cliLabels": {
+    "io.docksal.user": "docker",
+    "io.docksal.shell": "bash"
+  }
+}

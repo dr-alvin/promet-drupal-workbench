@@ -1,0 +1,85 @@
+'use strict';
+const fs=require('fs'),path=require('path');
+const {validate,selected,settings,hash,fail}=require('./scenarios');
+const work=process.env.AUDIT_WORK||'/work';
+const write=(name,data)=>fs.writeFileSync(path.join(work,name),JSON.stringify(data,null,2)+'\n');
+const readLines=name=>fs.existsSync(path.join(work,name))?fs.readFileSync(path.join(work,name),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
+const walk=dir=>fs.existsSync(dir)?fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(dir,e.name)):[path.join(dir,e.name)]):[];
+function resetEvidence(){for(const n of ['valid-captures.jsonl','functional-failures.jsonl','cleanup.jsonl','image-coverage.jsonl'])fs.rmSync(path.join(work,n),{force:true});}
+function report(result,scenarios=[]) {
+  write('result.json',result);
+  fs.writeFileSync(path.join(work,'developer-report.md'),'# Visual verification\n\nStatus: '+result.status+'\n\n'+(result.message||'Passed the configured scenarios and thresholds.')+'\n\nSee result.json for failures and Backstop status. Screenshot comparison alone does not establish upgrade completion.\n');
+  fs.writeFileSync(path.join(work,'qa-report.md'),'# Browser QA\n\n'+scenarios.map(s=>`## ${s.label} (${s.id})\n\nOpen ${s.path||'[configured environment URL]'} as ${s.role||'anonymous'} at ${s.viewport.width} × ${s.viewport.height}.\n\n${[...(s.setup||[]),...(s.interactions||[])].map(x=>`- ${x.action} ${x.selector}${x.value?' with '+x.value:''}`).join('\n')}\n\nExpected page: ${typeof s.expectedUrl==='string'?s.expectedUrl:JSON.stringify(s.expectedUrl)}. Required content: ${(s.requiredText||s.requiredElements).join(', ')}. Record unexpected behavior against this scenario ID.\n`).join('\n')+'\nUAT requires a named business approver and the exact tested release.\n');
+}
+async function capture(command,config) {
+  const backstop=require('backstopjs');
+  try {await backstop(command,{config});return 0;}catch(e){return Number.isInteger(e?.code)?e.code:1;}
+}
+async function main(){
+  fs.mkdirSync(work,{recursive:true});
+  const [mode,file]=process.argv.slice(2);
+  let scenarios=[];const started=Date.now();let captures=0;let criticalResult=null;
+  try {
+    const config=JSON.parse(fs.readFileSync(file,'utf8'));
+    if(mode==='sitemap') {
+      if(!config.environment?.authorized || !['local','dev','test','multidev'].includes(config.environment.kind))fail('Non-production authorization required',3);
+      const result=await require('./sitemap').discover(config.sitemap||{});write('sitemap.json',result);return 0;
+    }
+    if(!['reference','test'].includes(mode))fail('Invalid browser command');
+    validate(config);scenarios=selected(config,process.env.AUDIT_SELECT).slice().sort((a,b)=>Number(!!b.critical)-Number(!!a.critical));
+    const partial=scenarios.length!==config.scenarios.length;
+    if(config.browserSandbox===false&&!config.sandboxExceptionReason)fail('Disabling sandbox requires a documented container-specific reason',3);
+    const captureSettings=settings(config,scenarios),identity=hash(captureSettings);
+    const baseline=path.join(work,'capture-settings.json');
+    if(mode==='reference'&&(fs.existsSync(baseline)||fs.existsSync(path.join(work,'bitmaps_reference'))))fail('Baseline exists; use a new output directory',3);
+    if(mode==='test') {
+      if(!fs.existsSync(baseline))fail('No baseline',3);
+      const saved=JSON.parse(fs.readFileSync(baseline));
+      if(!saved.stable || saved.identity!==identity)fail('Baseline settings changed or baseline unstable',3);
+      if(!saved.referenceFiles?.length)fail('Baseline image manifest missing',3);
+      for(const item of saved.referenceFiles) {
+        const file=path.join(work,item.path);
+        if(!fs.existsSync(file)||hash(fs.readFileSync(file).toString('base64'))!==item.hash)fail('Baseline image missing or changed',3);
+      }
+    }
+    resetEvidence();
+    const make=require('../backstop.config');
+    const backstopConfig=make(config,scenarios,mode,work);
+    const critical=scenarios.filter(s=>s.critical);
+    if(mode==='test'&&critical.length&&critical.length<scenarios.length){
+      const smoke=make(config,critical,mode,work);
+      smoke.paths={...smoke.paths,bitmaps_test:work+'/critical/bitmaps_test',html_report:work+'/critical/html_report',ci_report:work+'/critical/ci_report'};
+      const smokeStatus=await capture('test',smoke);captures+=critical.length;
+      const valid=readLines('valid-captures.jsonl'),failures=readLines('functional-failures.jsonl');
+      const complete=JSON.stringify(valid.map(x=>x.id).sort())===JSON.stringify(critical.map(x=>x.id).sort());
+      criticalResult={status:smokeStatus===0&&complete&&!failures.length?'passed':'failed',validCaptures:valid,failures};
+      write('critical-result.json',criticalResult);
+      if(criticalResult.status!=='passed'){
+        report({schemaVersion:'1.0',mode,status:failures.length?'functional_failure':!complete?'capture_failure':'visual_mismatch',exitCode:!complete&&!failures.length?2:1,coverage:'partial',criticalResult,expectedScenarios:scenarios.map(s=>s.id),message:'Critical scenarios failed; full required catalog was not completed.',metrics:{elapsedSeconds:(Date.now()-started)/1000,captureAttempts:captures}},scenarios);
+        return !complete&&!failures.length?2:1;
+      }
+      resetEvidence();
+    }
+    let status=await capture(mode,backstopConfig);captures+=scenarios.length;
+    let valid=readLines('valid-captures.jsonl'),functional=readLines('functional-failures.jsonl');
+    const expected=scenarios.map(s=>s.id).sort();
+    const complete=JSON.stringify(valid.map(x=>x.id).sort())===JSON.stringify(expected);
+    let pngs=walk(path.join(work,mode==='reference'?'bitmaps_reference':'bitmaps_test')).filter(x=>x.endsWith('.png')&&!x.includes('diff'));
+    let code=functional.length?1:!complete||pngs.length<scenarios.length?2:status?1:0;
+    if(mode==='reference'&&code===0) {
+      // Run Backstop test against the SAME reference site to measure baseline stability.
+      resetEvidence();
+      const repeat={...backstopConfig,scenarios:backstopConfig.scenarios.map(s=>({...s,url:s.referenceUrl,auditMode:'reference'}))};
+      const repeatStatus=await capture('test',repeat);captures+=scenarios.length;
+      const repeatValid=readLines('valid-captures.jsonl');
+      const repeatFunctional=readLines('functional-failures.jsonl');
+      const stable=repeatStatus===0&&repeatValid.length===scenarios.length&&!repeatFunctional.length;
+      write('capture-settings.json',{...captureSettings,identity,stable,referenceFiles:walk(path.join(work,'bitmaps_reference')).filter(f=>f.endsWith('.png')).map(f=>({path:path.relative(work,f),hash:hash(fs.readFileSync(f).toString('base64'))}))});
+      if(!stable){code=repeatFunctional.length?1:2;status=repeatStatus;functional.push(...repeatFunctional);}
+    }
+    if(code===0&&partial)code=3;
+    const result={coverage:partial?'partial':'complete',criticalResult,imageCoverage:readLines('image-coverage.jsonl'),metrics:{elapsedSeconds:(Date.now()-started)/1000,captureAttempts:captures},schemaVersion:'1.0',mode,status:code===0?'passed':code===3?'partial':code===2?'capture_failure':functional.length?'functional_failure':'visual_mismatch',underlyingBackstopStatus:status,exitCode:code,expectedScenarios:expected,validCaptures:valid,failures:functional,message:code===0?'Passed the configured scenarios and thresholds.':'Verification did not pass; inspect failures, completeness and baseline stability.'};
+    report(result,scenarios);return code;
+  } catch(e){const code=[1,2,3,64].includes(e.code)?e.code:2;report({schemaVersion:'1.0',status:code===3?'blocked':'tool_failure',exitCode:code,message:e.message},scenarios);return code;}
+}
+main().then(code=>{process.exitCode=code;});

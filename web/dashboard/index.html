@@ -1,0 +1,2128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Promet Drupal Workbench · Drupal 11 Pipeline</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="alternate icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <script>
+    (function() {
+      try {
+        var saved = localStorage.getItem('d11-theme') || 'system';
+        var isDark = saved === 'dark' || (saved === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme-mode', saved);
+      } catch(e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/style.css?v=2.1.4">
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar Navigation -->
+    <aside id="workbench-sidebar">
+      <!-- 1. Brand & Workbench Identity -->
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-icon">
+          <svg class="ui-icon brand-icon" aria-hidden="true"><use href="#icon-droplet"></use></svg>
+        </div>
+        <div class="sidebar-brand-content">
+          <div class="sidebar-brand-title">Promet Workbench</div>
+          <div class="sidebar-brand-badge">
+            <span class="sidebar-brand-badge-dot"></span>
+            <span>Drupal 11 Pipeline</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Projects Section (Primary Focus) -->
+      <div class="sidebar-section">
+        <div class="sidebar-title">
+          <span class="sidebar-title-label">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-folder"></use></svg>
+            <span>Projects</span>
+          </span>
+          <button id="new-project" class="sidebar-add-btn" type="button" aria-label="Add project" title="Add project to workbench">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg>
+            <span>Add</span>
+          </button>
+        </div>
+        <nav id="project-list" aria-label="Projects"></nav>
+      </div>
+
+      <!-- 3. Workspace Tools & Navigation -->
+      <div class="sidebar-section sidebar-tools-section">
+        <div class="sidebar-title">
+          <span class="sidebar-title-label">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-cpu"></use></svg>
+            <span>Tools &amp; Guides</span>
+          </span>
+        </div>
+        <div class="sidebar-nav-group">
+          <button id="open-terminal-btn" class="sidebar-nav-btn terminal-trigger-btn" type="button" title="Open interactive command console">
+            <span class="sidebar-nav-icon terminal-icon-wrap">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg>
+            </span>
+            <span class="sidebar-nav-label">Command Console</span>
+          </button>
+          <button id="sidebar-guide-btn" class="sidebar-nav-btn" type="button" title="View all CLI commands, workflow recipes, and sample AI prompts for developers">
+            <span class="sidebar-nav-icon">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-book-open"></use></svg>
+            </span>
+            <span class="sidebar-nav-label">Commands &amp; Prompts</span>
+          </button>
+          <button id="refresh-dashboard" class="sidebar-nav-btn" type="button" title="Reload project status and run data">
+            <span class="sidebar-nav-icon">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-refresh"></use></svg>
+            </span>
+            <span class="sidebar-nav-label">Refresh Dashboard</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 4. Pinned Sidebar Footer -->
+      <div class="sidebar-footer">
+        <div class="sidebar-note">
+          <div class="sidebar-note-header">
+            <span class="shield-badge">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-shield-check"></use></svg>
+            </span>
+            <strong>Zero-Copy Safe Mode</strong>
+          </div>
+          <p class="sidebar-note-body">Isolated Git branch with instant DB rollback. Production safe.</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main>
+      <!-- Real-time Alert / Notification Banner -->
+      <div id="message" role="alert" hidden></div>
+
+      <!-- Active Workflow Banner (shown when a workflow is running or lock is active) -->
+      <div id="active-workflow-banner" class="active-workflow-banner" style="display:none;">
+        <div class="active-workflow-content">
+          <span class="live-dot-pulse"></span>
+          <span id="active-workflow-label">Workflow in progress...</span>
+        </div>
+        <div class="active-workflow-actions">
+          <button id="btn-reset-workflow-lock" class="btn-reset-lock" type="button" title="Clear stale lock and reset interrupted workflows">
+            ✕ Clear Stale Lock / Reset
+          </button>
+        </div>
+      </div>
+
+      <!-- App Header Bar -->
+      <header class="page-title page-header">
+        <!-- Tier 1: Breadcrumbs & Global Utility Controls -->
+        <div class="page-header-nav">
+          <div class="pantheon-breadcrumbs">
+            <span class="breadcrumb-org"><svg class="ui-icon" style="width:11px;height:11px;"><use href="#icon-shield-check"></use></svg> Workspace</span>
+            <span class="breadcrumb-sep">/</span>
+            <div class="project-switcher-dropdown" id="project-switcher">
+              <button id="project-switcher-btn" class="project-switcher-trigger" type="button" aria-haspopup="true" aria-expanded="false" title="Switch active Drupal project">
+                <span class="project-switcher-dot" id="project-switcher-dot"></span>
+                <span class="project-switcher-name" id="breadcrumb-site-name">Upgrade Pipeline</span>
+                <span class="project-switcher-badge" id="project-switcher-env" style="display:none;"></span>
+                <svg class="ui-icon chevron" aria-hidden="true" style="width:11px;height:11px;"><use href="#icon-chevron-down"></use></svg>
+              </button>
+              <div id="project-switcher-menu" class="project-switcher-menu" hidden>
+                <div class="project-switcher-search-wrap">
+                  <svg class="ui-icon search-icon" aria-hidden="true" style="width:13px;height:13px;"><use href="#icon-search"></use></svg>
+                  <input type="text" id="project-switcher-search" class="project-switcher-search" placeholder="Search projects..." aria-label="Search projects">
+                </div>
+                <div id="project-switcher-list" class="project-switcher-items" role="menu"></div>
+                <div class="project-switcher-footer">
+                  <button type="button" id="project-switcher-add" class="project-switcher-add-btn">
+                    <svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg>
+                    <span>Add New Project</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="page-header-utilities">
+            <!-- Theme Mode Switcher -->
+            <div class="theme-toggle" role="radiogroup" aria-label="Theme selection">
+              <button class="theme-toggle-option" data-theme="light" role="radio" aria-checked="false" title="Light theme">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-sun"></use></svg>
+                <span class="theme-label">Light</span>
+              </button>
+              <button class="theme-toggle-option" data-theme="dark" role="radio" aria-checked="false" title="Dark theme">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-moon"></use></svg>
+                <span class="theme-label">Dark</span>
+              </button>
+              <button class="theme-toggle-option active" data-theme="system" role="radio" aria-checked="true" title="System default theme">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-laptop"></use></svg>
+                <span class="theme-label">System</span>
+              </button>
+            </div>
+
+            <!-- Developer Options Dropdown -->
+            <details class="dropdown developer-dropdown" id="developer-dropdown">
+              <summary class="secondary header-util-btn" title="Developer &amp; Advanced Pipeline Options">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-code"></use></svg>
+                <span>Dev Options</span>
+                <svg class="ui-icon chevron" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
+              </summary>
+              <div class="dev-dropdown-menu" role="menu">
+                <div class="dev-menu-header">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-code"></use></svg>
+                  <span>Developer Options</span>
+                </div>
+                <label class="dev-menu-item-toggle" title="Show mock test fixture projects in sidebar">
+                  <input type="checkbox" id="show-fixtures">
+                  <span>Show test fixtures</span>
+                </label>
+                <div class="dev-menu-divider"></div>
+                <div class="dev-menu-subhead">Stage Triggers</div>
+                <div id="developer-actions" class="developer-actions-list"></div>
+                <div class="dev-menu-divider"></div>
+                <button id="dev-open-guide-btn" type="button" class="dev-menu-item-toggle" style="background:none;border:none;cursor:pointer;width:100%;text-align:left;display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:12.5px;color:var(--text-main);border-radius:var(--radius-sm);">
+                  <svg class="ui-icon" aria-hidden="true" style="color:var(--pantheon-yellow);"><use href="#icon-book-open"></use></svg>
+                  <span>Commands &amp; Prompts Guide</span>
+                </button>
+              </div>
+            </details>
+
+            <button id="open-guide-btn" class="secondary header-util-btn" type="button" title="View all CLI commands, workflow recipes, and sample AI prompts for developers">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-book-open"></use></svg>
+              <span>Commands &amp; Prompts Guide</span>
+            </button>
+            <button id="open-settings-btn" class="secondary header-util-btn" type="button" title="Workbench &amp; Project Settings">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg>
+              <span>Settings</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tier 2: Page Title & Primary Project Actions -->
+        <div class="page-header-main">
+          <div class="page-header-headings">
+            <div class="eyebrow-container">
+              <span class="eyebrow" id="pipeline-eyebrow">DRUPAL 10 → 11 UPGRADE PIPELINE</span>
+            </div>
+            <h1 id="title">Guided Drupal upgrade.</h1>
+            <p id="subtitle">Add project → Scan → Report and choose actions → Proceed.</p>
+          </div>
+          <div class="page-header-actions actions">
+            <button id="top-terminal-btn" class="secondary top-terminal-btn" type="button" title="Open terminal console to run Drush, Composer, or Upgrade commands">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg>
+              <span>Run Upgrade Command</span>
+            </button>
+            <button id="delete-project-btn" class="quiet delete-project-btn" type="button" style="display:none;" title="Remove project from workbench (keeps your actual project files safe)">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg>
+              <span>Remove from Workbench</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Empty State / Welcome Screen -->
+      <section id="empty" class="welcome">
+        <div class="welcome-icon">
+          <svg class="ui-icon welcome-svg" aria-hidden="true"><use href="#icon-droplet"></use></svg>
+        </div>
+        <h2>Add your Drupal project to start</h2>
+        <p>Provide your local Drupal site folder and URL. The workbench uses a zero-copy dedicated Git branch with an atomic DB snapshot to automate your Drupal 11 upgrade safely.</p>
+        <button id="empty-add" class="primary" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus-circle"></use></svg> Add Project &amp; Run Audit →</button>
+        <div class="benefits">
+          <span><svg class="ui-icon" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> 01 · Plan &amp; Risk</span>
+          <span><svg class="ui-icon" aria-hidden="true"><use href="#icon-shield-check"></use></svg> 02 · Test Audit</span>
+          <span><svg class="ui-icon" aria-hidden="true"><use href="#icon-rocket"></use></svg> 03 · 1-Click Upgrade</span>
+          <span><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg> 04 · Regression Check</span>
+          <span><svg class="ui-icon" aria-hidden="true"><use href="#icon-rotate-ccw"></use></svg> 05 · Safe Rollback</span>
+          <span><svg class="ui-icon" aria-hidden="true"><use href="#icon-git-branch"></use></svg> 06 · Git Handoff</span>
+        </div>
+      </section>
+
+      <!-- Setup Wizard Screen -->
+      <section id="setup" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" id="setup-eyebrow">FAST PROJECT SETUP</p>
+            <h2 id="setup-title">Connect a running local Drupal site</h2>
+          </div>
+          <button id="cancel-setup" class="quiet" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#icon-x"></use></svg> Cancel</button>
+        </div>
+        <form id="setup-form">
+          <div class="grid">
+            <label>
+              Project root path
+              <input id="source" placeholder="/path/to/your-drupal-project" required>
+              <small>Folder containing composer.json. Works in-place on dedicated upgrade branch.</small>
+            </label>
+            <label>
+              Local site URL
+              <input id="source-url" type="url" placeholder="https://my-project.ddev.site" required>
+              <small>Running local site URL for baseline route capture.</small>
+            </label>
+          </div>
+
+          <div style="margin: 14px 0 18px;">
+            <label class="check">
+              <input id="capture-nav-links" type="checkbox" checked>
+              Auto-capture header &amp; footer navigation links (same domain) for thorough regression testing
+            </label>
+          </div>
+
+          <details>
+            <summary>Advanced route &amp; runtime options</summary>
+            <div class="grid" style="margin-top: 14px;">
+              <label>
+                Sitemap URL <span class="muted">optional</span>
+                <input id="sitemap-url" type="url" placeholder="https://my-project.ddev.site/sitemap.xml">
+                <small>When blank, tries /sitemap.xml automatically.</small>
+              </label>
+              <label>
+                Runtime wrapper
+                <select id="source-wrapper">
+                  <option value="auto">Detect automatically</option>
+                  <option value="ddev">DDEV</option>
+                  <option value="fin">Docksal (fin)</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              Explicit routes <span class="muted">optional, one per line</span>
+              <textarea id="routes" rows="3" placeholder="/&#10;/services&#10;/about&#10;/user/login"></textarea>
+            </label>
+            <div class="grid">
+              <label>Project name<input id="name"></label>
+              <label>Project ID<input id="project-id" pattern="[a-z][a-z0-9-]{2,47}"></label>
+              <label>Database export<input id="database" placeholder="/path/to/database.sql.gz"></label>
+              <label>Public files folder<input id="files" placeholder="Detected from Drupal"></label>
+            </div>
+            <label>Existing reviewed inbox bundle<input id="bundle"></label>
+            <label>Project configuration JSON<textarea id="config" rows="4" spellcheck="false"></textarea></label>
+            <button type="button" id="register" class="secondary"><svg class="ui-icon" aria-hidden="true"><use href="#icon-upload"></use></svg> Import reviewed bundle</button>
+          </details>
+
+          <div class="form-footer">
+            <p>⚡ <strong>Zero-Copy Feature Branch</strong>: Works on a dedicated <code>upgrade/drupal-11</code> branch with an atomic DB snapshot. Baseline branch is untouched.</p>
+            <button type="submit" class="primary" id="inspect-source"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus-circle"></use></svg> <span id="setup-submit-text">Add &amp; Run Test Audit →</span></button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Active Project View -->
+      <div id="project-view" hidden>
+        <!-- Project Switching Loading Indicator -->
+        <div id="project-loading-overlay" class="project-loading-overlay" hidden>
+          <div class="project-loading-card">
+            <span class="live-pulse-dot"></span>
+            <span id="project-loading-text">Switching project...</span>
+          </div>
+        </div>
+
+        <!-- Pantheon Site Environment Toolbar -->
+        <div class="pantheon-site-toolbar">
+          <div class="pantheon-toolbar-left">
+            <span class="pantheon-env-chip">
+              <span class="pantheon-env-dot"></span>
+              <span id="pantheon-env-name">LOCAL DEV</span>
+            </span>
+            <span class="pantheon-runtime-chip" id="pantheon-runtime-badge">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-cpu"></use></svg>
+              <span id="pantheon-runtime-text">Local Container</span>
+            </span>
+            <span class="pantheon-git-chip">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-git-branch"></use></svg>
+              <code id="pantheon-git-text">upgrade/drupal-11</code>
+            </span>
+          </div>
+          <div class="pantheon-toolbar-right">
+            <a id="pantheon-visit-site-link" class="pantheon-visit-btn" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-globe"></use></svg>
+              <span>Visit Site</span>
+              <svg class="ui-icon" style="width:10px;height:10px;opacity:0.75;" aria-hidden="true"><use href="#icon-external-link"></use></svg>
+            </a>
+            <button id="pantheon-manage-runs-btn" class="quiet pantheon-conn-btn" type="button" title="View, manage, and delete previous audit runs">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
+              <span>Audit History</span>
+              <span id="manage-runs-badge" class="badge-count" style="display:none;margin-left:4px;padding:1px 6px;background:var(--bg-subtle);border-radius:10px;font-size:11px;font-weight:600;"></span>
+            </button>
+            <button id="pantheon-edit-project-btn" class="quiet pantheon-conn-btn" type="button" title="Edit project settings, local URL, and routes">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg>
+              <span>Edit Project</span>
+            </button>
+            <button id="pantheon-connection-btn" class="quiet pantheon-conn-btn" type="button" title="View Drush and Git connection details">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg>
+              <span>Connection Info</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Pipeline Progress Stepper -->
+        <nav class="pipeline-stepper-wrapper" aria-label="Pipeline navigation">
+          <ol id="pipeline-stepper" class="pipeline-stepper" role="tablist" aria-label="Upgrade pipeline stages">
+            <li id="nav-step-plan" class="active" role="tab" tabindex="0" aria-selected="true" aria-current="step" data-stage="plan">
+              <span class="step-num">01</span>
+              <span class="step-text"><strong>Plan</strong><small>Proposal · Risk · Scope</small></span>
+            </li>
+            <li id="nav-step-test-audit" role="tab" tabindex="0" aria-selected="false" data-stage="test-audit">
+              <span class="step-num">02</span>
+              <span class="step-text"><strong>Test Audit</strong><small>Baseline Evidence</small></span>
+            </li>
+            <li id="nav-step-upgrade" role="tab" tabindex="-1" aria-selected="false" aria-disabled="true" data-stage="upgrade">
+              <span class="step-num">03</span>
+              <span class="step-text"><strong>Upgrade</strong><small>Backup &amp; Execute</small></span>
+            </li>
+            <li id="nav-step-regression" role="tab" tabindex="-1" aria-selected="false" aria-disabled="true" data-stage="regression">
+              <span class="step-num">04</span>
+              <span class="step-text"><strong>Regression</strong><small>Compare Test Audit</small></span>
+            </li>
+            <li id="nav-step-rollback" role="tab" tabindex="-1" aria-selected="false" aria-disabled="true" data-stage="rollback">
+              <span class="step-num">05</span>
+              <span class="step-text"><strong>Rollback</strong><small>1-Click Recovery</small></span>
+            </li>
+            <li id="nav-step-report" role="tab" tabindex="-1" aria-selected="false" aria-disabled="true" data-stage="report">
+              <span class="step-num">06</span>
+              <span class="step-text"><strong>Report</strong><small>Evidence &amp; Git Handoff</small></span>
+            </li>
+          </ol>
+        </nav>
+
+        <!-- Active Pipeline Action Banner -->
+        <section id="next-step" class="action-banner">
+          <div class="action-banner-top">
+            <div class="action-banner-heading">
+              <div class="action-banner-eyebrow-row">
+                <p class="eyebrow">ACTIVE PIPELINE STATUS</p>
+                <span id="pipeline-live-badge" class="pipeline-live-tag" hidden>
+                  <span class="live-pulse-dot"></span> LIVE EXECUTION
+                </span>
+              </div>
+              <h2 id="next-title"></h2>
+              <p id="next-detail"></p>
+            </div>
+            <div class="action-banner-controls">
+              <span id="pipeline-elapsed-wrap" class="pipeline-elapsed-chip" hidden>
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
+                <span id="pipeline-elapsed-text">00:00s</span>
+              </span>
+              <div id="next-actions" class="actions"></div>
+            </div>
+          </div>
+
+          <!-- Informative In-Flight Progress Tracker (Shown dynamically while active) -->
+          <div id="pipeline-running-info" class="pipeline-running-box" hidden>
+            <div class="progress-bar-header">
+              <span id="progress-step-label" class="progress-step-label">Step 1 of 6 · Initializing</span>
+              <span id="progress-percent-label" class="progress-percent-label">15%</span>
+            </div>
+            <div class="pipeline-progress-track">
+              <div id="pipeline-progress-bar" class="pipeline-progress-fill" style="width: 15%;"></div>
+            </div>
+
+            <!-- Sub-Step Pipeline Tracker -->
+            <div id="pipeline-substeps" class="pipeline-substeps-list"></div>
+
+            <!-- Safeguards Assurance Row & Console Toggle -->
+            <div class="pipeline-safeguards-row">
+              <div class="pipeline-safeguards-badges">
+                <span class="safeguard-chip" title="Pre-upgrade database and Git commit backed up before mutation">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-shield-check"></use></svg> 100% Reversible
+                </span>
+                <span class="safeguard-chip" title="Work is scoped to dedicated zero-copy feature branch">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-git-branch"></use></svg> Feature Branch Safe
+                </span>
+                <span class="safeguard-chip" id="safeguard-chip-action" title="Analysis executed in disposable container">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-shield-check"></use></svg> <span id="safeguard-chip-action-text">Zero-Mutation Scan</span>
+                </span>
+              </div>
+              <button id="toggle-progress-log" class="quiet toggle-log-btn" type="button" title="View live execution activity logs">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg>
+                <span id="toggle-log-label">Live Activity Feed</span>
+                <svg id="toggle-log-chevron" class="ui-icon chevron-icon" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
+              </button>
+            </div>
+
+            <!-- Expandable Live Activity / Log Console -->
+            <div id="pipeline-log-console" class="pipeline-log-console" hidden>
+              <div class="console-header">
+                <span>Real-Time Execution Feed</span>
+                <span id="console-line-count" class="muted">0 events</span>
+              </div>
+              <pre id="console-output" class="console-output"></pre>
+            </div>
+          </div>
+
+          <p id="checkpoint" class="muted"></p>
+        </section>
+
+        <!-- STAGE 01: PLAN -->
+        <section id="stage-plan" class="pipeline-stage">
+          <div class="hero-action-card" id="plan-hero-card">
+            <div class="hero-text">
+              <h3 id="plan-hero-title">
+                <svg class="ui-icon hero-icon" aria-hidden="true"><use href="#icon-rocket"></use></svg>
+                Fast 1-Click Upgrade Rehearsal
+              </h3>
+              <p id="plan-hero-desc">Automatically remediate custom code with AI, upgrade compatible Composer packages to Drupal 11, apply community patches, and execute the upgrade with database backup and a dedicated feature branch.</p>
+              <div id="baseline-status-bar" class="baseline-status-bar" style="margin-top: 10px; display: flex; align-items: center; gap: 10px; font-size: 0.85rem;">
+                <span id="baseline-status-pill" class="badge muted">📸 Visual Baseline: Checking...</span>
+                <button id="btn-capture-baseline" class="secondary small-btn" type="button" style="display:none; padding: 4px 10px; font-size: 0.8rem;">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg> Capture Baseline
+                </button>
+              </div>
+            </div>
+            <button id="hero-one-click-upgrade" class="primary hero-btn" type="button">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-rocket"></use></svg> Start 1-Click Upgrade →
+            </button>
+          </div>
+
+          <div class="proposal-grid">
+            <div class="info-card">
+              <h4 id="plan-card1-title">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-clipboard"></use></svg>
+                Upgrade Proposal
+              </h4>
+              <div class="proposal-metric">
+                <span class="metric-val" id="plan-core-transition">Drupal 10 → 11</span>
+                <span class="metric-lbl" id="plan-core-label">Target Core Version</span>
+              </div>
+              <div class="stat-chips-grid">
+                <div class="stat-chip green" id="plan-chip-compatible-wrap">
+                  <span id="plan-chip-compatible"><svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg> Compatible</span>
+                  <strong id="plan-stat-compatible">—</strong>
+                </div>
+                <div class="stat-chip blue" id="plan-chip-updates-wrap">
+                  <span id="plan-chip-updates"><svg class="ui-icon" aria-hidden="true"><use href="#icon-package"></use></svg> Updates</span>
+                  <strong id="plan-stat-updates">—</strong>
+                </div>
+                <div class="stat-chip amber" id="plan-chip-patches-wrap">
+                  <span id="plan-chip-patches"><svg class="ui-icon" aria-hidden="true"><use href="#icon-git-branch"></use></svg> Patches</span>
+                  <strong id="plan-stat-patches">—</strong>
+                </div>
+                <div class="stat-chip purple" id="plan-chip-custom-wrap">
+                  <span id="plan-chip-custom"><svg class="ui-icon" aria-hidden="true"><use href="#icon-sparkles"></use></svg> Custom AI Fixes</span>
+                  <strong id="plan-stat-custom">—</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="info-card">
+              <h4 id="plan-card2-title">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-shield"></use></svg>
+                Deployment Risk Score
+              </h4>
+              <div class="proposal-metric">
+                <span class="metric-val" id="plan-risk-badge">—</span>
+                <span class="metric-lbl">Composite Risk Score (0 = Minimal Risk · 100 = High Risk)</span>
+              </div>
+              <div class="risk-details">
+                <p id="plan-risk-detail-blockers"><strong>Hard Blockers:</strong> <span id="plan-hard-blockers">0</span></p>
+                <p id="plan-risk-detail-isolation"><strong>Isolation:</strong> Database backup &amp; feature branch</p>
+                <p id="plan-risk-detail-repo"><strong>Source Repository:</strong> Works in-place on dedicated branch</p>
+              </div>
+            </div>
+
+            <div class="info-card">
+              <h4 id="plan-card3-title">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
+                Timeline &amp; Scope
+              </h4>
+              <div class="proposal-metric">
+                <span class="metric-val" id="plan-est-duration">~5–10 mins</span>
+                <span class="metric-lbl" id="plan-est-label">Estimated Automation Time</span>
+              </div>
+              <div class="timeline-details">
+                <p id="plan-timeline-detail-manual"><strong>Manual Code Fixes:</strong> <span id="plan-manual-effort">0 hours</span></p>
+                <p id="plan-timeline-detail-rollback"><strong>Rollback Duration:</strong> Instant (&lt; 30s)</p>
+                <p id="plan-timeline-detail-handoff"><strong>Git Handoff:</strong> Developer commits &amp; pushes manually</p>
+              </div>
+            </div>
+          </div>
+
+          <details class="advanced-plan-details" open style="margin-top:20px;">
+            <summary style="font-size:14px;font-weight:600;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:8px;">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-layers"></use></svg>
+              <span id="plan-compat-summary-label">Module &amp; Theme Compatibility Decision Matrix</span>
+            </summary>
+            <div id="plan-compatibility-container" style="margin-top:14px;">
+              <div class="actions" style="margin-bottom:12px;display:flex;gap:14px;align-items:center;justify-content:flex-end;flex-wrap:wrap;">
+                <label class="provider" style="font-size:12.5px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;">
+                  AI Remediation Engine:
+                  <select id="ai-provider" style="padding:5px 10px;border-radius:var(--radius-sm);font-size:12px;border:1px solid var(--border);">
+                    <option value="gemini">Google Gemini (Default)</option>
+                    <option value="claude">Claude</option>
+                    <option value="openai">OpenAI (ChatGPT)</option>
+                    <option value="ollama">Ollama (Local LLM)</option>
+                    <option value="codex">Codex CLI</option>
+                  </select>
+                </label>
+                <span id="provider-status" class="muted" style="font-size:12px;"></span>
+              </div>
+              <div id="compatibility-summary" class="decision-summary" hidden></div>
+              <div id="compatibility-list"></div>
+            </div>
+          </details>
+        </section>
+
+        <!-- STAGE 02: TEST AUDIT -->
+        <section id="stage-test-audit" class="pipeline-stage" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">STAGE 02 · BASELINE EVIDENCE</p>
+              <h2>Pre-Upgrade Test Audit &amp; Route Discovery</h2>
+              <p class="muted">Health checks, system runtime verification, and baseline page captures captured before upgrading.</p>
+            </div>
+            <button id="rerun-audit-btn" class="secondary" type="button">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-refresh"></use></svg> Re-run Test Audit
+            </button>
+          </div>
+
+          <div class="quick-plan-grid">
+            <div class="stat-card">
+              <div class="stat-card-icon"><svg class="ui-icon stat-icon" aria-hidden="true"><use href="#icon-cpu"></use></svg></div>
+              <span class="stat-num" id="audit-stat-php">PHP 8.3</span>
+              <span class="stat-lbl">Runtime Environment</span>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon"><svg class="ui-icon stat-icon" aria-hidden="true"><use href="#icon-globe"></use></svg></div>
+              <span class="stat-num" id="audit-stat-routes">0</span>
+              <span class="stat-lbl">Baseline Routes</span>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon"><svg class="ui-icon stat-icon" aria-hidden="true"><use href="#icon-compass"></use></svg></div>
+              <span class="stat-num" id="audit-stat-nav">0</span>
+              <span class="stat-lbl">Nav Links Auto-Captured</span>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon"><svg class="ui-icon stat-icon" aria-hidden="true"><use href="#icon-shield-check"></use></svg></div>
+              <span class="stat-num" id="audit-stat-status" style="color:var(--green);">PASS</span>
+              <span class="stat-lbl">Readiness Checks</span>
+            </div>
+          </div>
+
+          <!-- Quality & Standards Guardrails Card -->
+          <div class="info-card guardrails-card" style="margin: 12px 0; border-left: 4px solid var(--brand-500);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+              <h3 style="margin:0;font-size:15px;">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-shield-check"></use></svg>
+                Code Quality &amp; Standards Guardrails
+              </h3>
+              <button id="guardrails-fix-btn" class="secondary" type="button" style="font-size:12px;padding:4px 10px;">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-wrench"></use></svg> Auto-Fix Standards
+              </button>
+            </div>
+            <div class="guardrails-grid">
+              <div class="guardrail-item">
+                <div class="guardrail-title">PHPStan (Drupal 11 Rules)</div>
+                <div id="guardrail-phpstan-badge" class="guardrail-badge pass">Passed</div>
+              </div>
+              <div class="guardrail-item">
+                <div class="guardrail-title">PHPCS (Drupal &amp; Practice)</div>
+                <div id="guardrail-phpcs-badge" class="guardrail-badge pass">Passed</div>
+              </div>
+              <div class="guardrail-item">
+                <div class="guardrail-title">Composer Schema &amp; Security</div>
+                <div id="guardrail-composer-badge" class="guardrail-badge pass">Valid &amp; Clean</div>
+              </div>
+              <div class="guardrail-item">
+                <div class="guardrail-title">Twig 3 Template Linter</div>
+                <div id="guardrail-twig-badge" class="guardrail-badge pass">0 Deprecations</div>
+              </div>
+              <div class="guardrail-item">
+                <div class="guardrail-title">Git Safety Policy</div>
+                <div id="guardrail-git-badge" class="guardrail-badge info">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-lock"></use></svg> Always New Branch
+                </div>
+              </div>
+            </div>
+            <div id="guardrails-details" style="margin-top:8px;font-size:12px;color:var(--text-muted);"></div>
+          </div>
+
+          <div id="audit-evidence-summary" style="margin:10px 0;"></div>
+          <div id="audit-routes-gallery" class="routes-gallery">
+            <h3><svg class="ui-icon" aria-hidden="true"><use href="#icon-globe"></use></svg> Discovered Baseline Routes</h3>
+            <div id="audit-routes-list" class="routes-list"></div>
+          </div>
+        </section>
+
+        <!-- STAGE 03: UPGRADE EXECUTION -->
+        <section id="stage-upgrade" class="pipeline-stage" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">STAGE 03 · AUTOMATED EXECUTION</p>
+              <h2>Automated Upgrade Execution</h2>
+              <p class="muted">Automated execution steps running on the upgrade feature branch.</p>
+            </div>
+            <button id="open-term-from-upgrade" class="secondary" type="button">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg> View Live Terminal Console
+            </button>
+          </div>
+
+          <div class="upgrade-stepper-card">
+            <div class="exec-step" id="step-exec-env">
+              <span class="exec-icon">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-circle"></use></svg>
+              </span>
+              <div>
+                <strong>1. Pre-Upgrade Backup &amp; Baseline Checkpoint</strong>
+                <p class="muted">Pre-upgrade database backup (pre-upgrade.sql.gz) and Git commit checkpoint verified.</p>
+              </div>
+            </div>
+            <div class="exec-step" id="step-exec-custom">
+              <span class="exec-icon">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-circle"></use></svg>
+              </span>
+              <div>
+                <strong>2. Custom Code &amp; Deprecation Fixes</strong>
+                <p class="muted">Applied Rector rules, info.yml core_version_requirement updated to ^10 || ^11.</p>
+              </div>
+            </div>
+            <div class="exec-step" id="step-exec-composer">
+              <span class="exec-icon">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-circle"></use></svg>
+              </span>
+              <div>
+                <strong>3. Composer Package Upgrade</strong>
+                <p class="muted">Upgrading drupal/core-recommended to Drupal 11, resolving contrib dependencies &amp; patches.</p>
+              </div>
+            </div>
+            <div class="exec-step" id="step-exec-db">
+              <span class="exec-icon">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-circle"></use></svg>
+              </span>
+              <div>
+                <strong>4. Database Schema Migrations &amp; Cache Clear</strong>
+                <p class="muted">Running drush updb -y, drush cr, and verifying post-upgrade site boot.</p>
+              </div>
+            </div>
+          </div>
+
+          <div id="upgrade-active-status" class="status-alert" style="margin-top:12px;"></div>
+          <div id="ai-doctor-panel" style="display:none;margin-top:16px;"></div>
+        </section>
+
+        <!-- STAGE 04: REGRESSION QA -->
+        <section id="stage-regression" class="pipeline-stage" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">STAGE 04 · QUALITY ASSURANCE</p>
+              <h2>Regression Testing: Compare Test Audit</h2>
+              <p class="muted">Direct before-and-after comparison of route rendering, status codes, and visual evidence.</p>
+            </div>
+            <div id="regression-verdict-badge" class="badge verdict-badge">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
+              Awaiting Upgrade Execution
+            </div>
+          </div>
+
+          <div id="regression-status-banner" class="guardrail-notice-box" style="margin:14px 0;display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:var(--radius-md);"></div>
+
+          <div class="regression-controls" style="margin:12px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+              <label style="margin:0;display:flex;align-items:center;gap:10px;font-size:13.5px;">
+                <strong>Select Route to Compare:</strong>
+                <select id="regression-route-select" style="width:auto;min-width:280px;"></select>
+              </label>
+              <div id="regression-view-mode-group" class="segmented-control" role="group" aria-label="Comparison View Mode" style="display:inline-flex;align-items:center;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);padding:2px;">
+                <button type="button" id="btn-view-sidebyside" class="segment-btn active" style="padding:5px 12px;font-size:12px;border:none;background:var(--bg-card);border-radius:4px;cursor:pointer;color:var(--text-main);font-weight:600;box-shadow:var(--shadow-xs);">
+                  <svg class="ui-icon" aria-hidden="true" style="width:13px;height:13px;vertical-align:-1px;"><use href="#icon-columns"></use></svg> Side-by-Side
+                </button>
+                <button type="button" id="btn-view-diff" class="segment-btn" style="padding:5px 12px;font-size:12px;border:none;background:transparent;border-radius:4px;cursor:pointer;color:var(--text-muted);font-weight:500;">
+                  <svg class="ui-icon" aria-hidden="true" style="width:13px;height:13px;vertical-align:-1px;"><use href="#icon-layers"></use></svg> Diff Highlight
+                </button>
+                <button type="button" id="btn-view-threeup" class="segment-btn" style="padding:5px 12px;font-size:12px;border:none;background:transparent;border-radius:4px;cursor:pointer;color:var(--text-muted);font-weight:500;">
+                  <svg class="ui-icon" aria-hidden="true" style="width:13px;height:13px;vertical-align:-1px;"><use href="#icon-layout"></use></svg> 3-Up Compare
+                </button>
+              </div>
+            </div>
+            <button id="open-live-site-btn" class="secondary" type="button">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-external-link"></use></svg> Open Upgraded Site in Browser
+            </button>
+          </div>
+
+          <div id="regression-grid" class="regression-comparison-grid view-sidebyside">
+            <div class="comparison-column" id="regression-col-before">
+              <div class="comparison-header">
+                <div>
+                  <h4>
+                    <svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg>
+                    Baseline (Pre-Upgrade)
+                  </h4>
+                  <div class="sub-label" style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">Drupal 10.x · Reference Capture</div>
+                </div>
+                <span class="badge status-info" id="regression-before-status">Drupal 10 · HTTP 200 OK</span>
+              </div>
+              <img id="regression-before-img" alt="Baseline screenshot capture (Drupal 10)">
+            </div>
+            <div class="comparison-column" id="regression-col-after">
+              <div class="comparison-header">
+                <div>
+                  <h4>
+                    <svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg>
+                    Post-Upgrade (Drupal 11)
+                  </h4>
+                  <div id="regression-after-sublabel" class="sub-label" style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">Drupal 11.x · Live Verification</div>
+                </div>
+                <span class="badge" id="regression-after-status">Pending Upgrade</span>
+              </div>
+              <div id="regression-after-placeholder" style="display:none;padding:48px 20px;text-align:center;color:var(--text-muted);font-size:13px;background:var(--bg-muted);border-radius:var(--radius-md);margin-top:10px;">
+                <svg class="ui-icon" aria-hidden="true" style="width:28px;height:28px;margin-bottom:8px;opacity:0.5;"><use href="#icon-clock"></use></svg>
+                <div>Post-upgrade visual capture will be recorded after running <strong>Stage 03 (1-Click Upgrade)</strong>.</div>
+              </div>
+              <img id="regression-after-img" alt="Post-upgrade screenshot capture (Drupal 11)">
+            </div>
+            <div class="comparison-column" id="regression-col-diff" style="display:none;">
+              <div class="comparison-header">
+                <div>
+                  <h4>
+                    <svg class="ui-icon" aria-hidden="true"><use href="#icon-layers"></use></svg>
+                    Visual Diff Overlay
+                  </h4>
+                  <div id="regression-diff-sublabel" class="sub-label" style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">BackstopJS Diff Highlight</div>
+                </div>
+                <span class="badge" id="regression-diff-status">0.0% diff</span>
+              </div>
+              <div id="regression-diff-placeholder" style="display:none;padding:48px 20px;text-align:center;color:var(--text-muted);font-size:13px;background:var(--bg-muted);border-radius:var(--radius-md);margin-top:10px;">
+                <svg class="ui-icon" aria-hidden="true" style="width:28px;height:28px;margin-bottom:8px;opacity:0.6;color:var(--green);"><use href="#icon-check-circle"></use></svg>
+                <div style="font-weight:600;color:var(--green-text);">Clean Match (0.0% Diff)</div>
+                <div style="font-size:12px;margin-top:4px;color:var(--text-muted);">Post-upgrade Drupal 11 render matches Drupal 10 baseline within tolerance.</div>
+              </div>
+              <img id="regression-diff-img" alt="Visual difference highlight overlay" style="display:none;">
+            </div>
+          </div>
+
+
+          <div class="regression-table-container" style="margin-top:24px;">
+            <div class="regression-table-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <h3 style="margin:0;font-size:15px;display:flex;align-items:center;gap:8px;">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-activity"></use></svg> Route Status &amp; Integrity Comparison
+                </h3>
+                <span id="regression-routes-count" class="badge" style="background:var(--bg-subtle);color:var(--text-secondary);border:1px solid var(--border);"></span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <div id="regression-filter-group" class="filter-pills" style="display:flex;align-items:center;gap:6px;">
+                  <button type="button" class="filter-pill active" data-reg-filter="all">All</button>
+                  <button type="button" class="filter-pill" data-reg-filter="variances"><svg class="ui-icon" style="width:11px;height:11px;color:var(--rose);"><use href="#icon-alert-triangle"></use></svg> Variances Only</button>
+                  <button type="button" class="filter-pill" data-reg-filter="passing"><svg class="ui-icon" style="width:11px;height:11px;color:var(--green);"><use href="#icon-check"></use></svg> Passing Only</button>
+                </div>
+                <input id="regression-search-input" type="search" placeholder="Filter routes..." class="table-search-input" style="width:180px;">
+              </div>
+            </div>
+            <div class="table-wrap" style="max-height:480px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-md);">
+              <table id="regression-table" class="data-table" style="width:100%;border-collapse:collapse;">
+                <thead>
+                  <tr style="position:sticky;top:0;background:var(--bg-subtle);z-index:2;">
+                    <th class="col-row-num" style="width:52px;min-width:52px;text-align:center;">#</th>
+                    <th>Route URL</th>
+                    <th>Baseline HTTP</th>
+                    <th>Post-Upgrade HTTP</th>
+                    <th>Visual Diff</th>
+                    <th>Verdict</th>
+                  </tr>
+                </thead>
+                <tbody id="regression-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- STAGE 05: ROLLBACK -->
+        <section id="stage-rollback" class="pipeline-stage" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">STAGE 05 · SAFETY &amp; RECOVERY</p>
+              <h2>1-Click Rollback to Pre-Upgrade Backup</h2>
+              <p class="muted">Instantly restore your database and codebase back to the pre-upgrade state if regressions or issues are detected.</p>
+            </div>
+          </div>
+
+          <div id="rollback-card-active" class="rollback-hero-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;">
+              <div>
+                <h3 style="margin:0 0 6px;color:var(--red);">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-rotate-ccw"></use></svg>
+                  Instant Safe Rollback
+                </h3>
+                <p style="margin:0;font-size:14px;color:var(--text-secondary);">
+                  Restores the database backup and codebase back to the pre-upgrade checkpoint in under 30 seconds.<br>
+                  <strong>Your source branch is preserved; rollback reverts to the backed-up state.</strong>
+                </p>
+              </div>
+              <button id="btn-do-rollback" class="danger" type="button" style="font-size:13.5px;padding:9px 18px;">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-rotate-ccw"></use></svg> Rollback to Baseline Now
+              </button>
+            </div>
+            <div id="rollback-running-alert" class="badge amber" style="display:none;margin-top:12px;padding:8px 12px;font-size:12.5px;border-radius:6px;width:100%;align-items:center;gap:8px;">
+              <svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg>
+              <span><strong>Upgrade Rehearsal in Progress:</strong> Rollback is locked until the current upgrade workflow completes or halts.</span>
+            </div>
+            <div id="rollback-interrupted-alert" class="badge amber" style="display:none;margin-top:12px;padding:8px 12px;font-size:12.5px;border-radius:6px;width:100%;align-items:center;gap:8px;">
+              <svg class="ui-icon" aria-hidden="true" style="color:var(--amber);"><use href="#icon-alert-triangle"></use></svg>
+              <span><strong>Interrupted / Incomplete Upgrade Detected:</strong> The previous upgrade rehearsal did not finish cleanly. Your pre-upgrade database backup (<code>pre-upgrade.sql.gz</code>) and Git commit snapshot are intact. Click <strong>Rollback to Baseline Now</strong> to restore the clean pre-upgrade Drupal 10 state.</span>
+            </div>
+            <div id="rollback-feedback" style="margin-top:10px;font-size:13px;display:none;"></div>
+          </div>
+
+          <div id="rollback-standby-card" class="card" style="display:none;padding:28px 24px;border:1px dashed var(--border);border-radius:var(--radius-lg);text-align:center;background:var(--bg-surface);">
+            <div style="max-width:520px;margin:0 auto;">
+              <div style="width:44px;height:44px;margin:0 auto 12px;border-radius:50%;background:var(--bg-muted);display:flex;align-items:center;justify-content:center;">
+                <svg class="ui-icon" aria-hidden="true" style="width:22px;height:22px;color:var(--text-muted);"><use href="#icon-rotate-ccw"></use></svg>
+              </div>
+              <h3 style="margin:0 0 8px;font-size:16px;">Rollback on Standby</h3>
+              <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.5;margin:0 0 16px;">
+                No upgrade run has been executed yet. Instant 1-Click Rollback activates automatically after you perform <strong>Stage 03 (Upgrade)</strong>, allowing you to revert code and database back to the pre-upgrade backup.
+              </p>
+              <button class="secondary" type="button" onclick="showStage('upgrade', true)" style="font-size:13px;padding:7px 14px;">
+                Go to Stage 03 Upgrade →
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- STAGE 06: REPORT & GIT HANDOFF -->
+        <section id="stage-report" class="pipeline-stage" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">STAGE 06 · EVIDENCE &amp; HANDOFF</p>
+              <h2>Upgrade Report &amp; Git Repository Handoff</h2>
+              <p class="muted">Download standalone audit reports or synchronize verified upgrade changes to your Git repository.</p>
+            </div>
+            <div class="runs-row">
+              <select id="runs" aria-label="Report history"></select>
+              <button id="delete-run-btn" class="icon-btn danger" type="button" title="Delete this run report permanently" hidden>
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="handoff-card">
+            <p class="eyebrow">1-CLICK GIT HANDOFF</p>
+            <h3>Synchronize Upgrade to Source Repository</h3>
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary);">Safely copies verified Drupal 11 composer files, custom code remediations, patches, and configuration to a dedicated Git branch in your project repository.</p>
+            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">
+              <label style="margin:0;font-size:13.5px;">
+                Target Git Branch:
+                <input id="handoff-branch" value="upgrade/drupal-11" style="width:220px;padding:7px 12px;border-radius:var(--radius-md);font-weight:600;">
+              </label>
+              <div class="guardrail-notice-box">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-lock"></use></svg>
+                <span>Guardrail Active: Always creates new branch. Never auto-commits or pushes.</span>
+              </div>
+              <button id="handoff-btn" class="primary" type="button" style="font-weight:600;padding:8px 16px;">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-git-branch"></use></svg> Create New Branch &amp; Sync Files →
+              </button>
+            </div>
+            <div id="handoff-status" style="margin-top:10px;font-size:13px;color:var(--text-muted);"></div>
+          </div>
+
+          <div class="actions report-downloads">
+            <button id="download-html" class="primary" style="font-weight:600;">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-file-code"></use></svg> Download HTML (Standalone with Images)
+            </button>
+            <button id="download-csv" class="secondary" style="font-weight:600;">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-download"></use></svg> Export Modules (CSV)
+            </button>
+            <button id="download-md" class="secondary">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-file-text"></use></svg> Download Markdown
+            </button>
+            <button id="download-docx" class="secondary">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-book-open"></use></svg> Download DOCX
+            </button>
+            <button id="print" class="secondary">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-printer"></use></svg> Print / PDF
+            </button>
+            <button id="ai-pr-summary-btn" class="secondary" style="font-weight:600;display:none;background:var(--purple-bg, #f5f3ff);color:var(--purple-text, #6d28d9);border-color:var(--purple-border, #ddd6fe);">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-sparkles"></use></svg> ⚡ Generate PR &amp; Executive Summary
+            </button>
+          </div>
+
+          <div id="report-content">
+            <div class="report-meta">
+              <span id="report-meta"></span>
+              <button id="freshness" class="quiet"><svg class="ui-icon" aria-hidden="true"><use href="#icon-refresh"></use></svg> Check freshness</button>
+            </div>
+            <div id="report-tabs" class="tabs" role="tablist"></div>
+            <article id="report-body"></article>
+            <details style="margin-top:14px;">
+              <summary><svg class="ui-icon" aria-hidden="true"><use href="#icon-file-text"></use></svg> Technical Artifacts &amp; Logs</summary>
+              <div id="artifacts" class="artifact-list"></div>
+              <pre id="preview"></pre>
+            </details>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Floating Background Task Indicator (shown when terminal command runs while modal is closed) -->
+  <div id="terminal-task-floating-banner" class="terminal-floating-toast" role="status" aria-live="polite" hidden>
+    <div class="toast-pulse-icon">
+      <span class="live-dot-pulse"></span>
+      <svg class="ui-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg>
+    </div>
+    <div class="toast-body">
+      <div class="toast-title-row">
+        <span class="toast-title">Upgrade Console Active</span>
+        <span id="toast-task-timer" class="toast-timer">00:00</span>
+      </div>
+      <div id="toast-task-cmd" class="toast-cmd" title="Active command">d11 upgrade ...</div>
+      <div id="toast-task-status" class="toast-status-text">Executing in background · 1-Click upgrade paused</div>
+    </div>
+    <div class="toast-actions">
+      <button id="toast-view-console-btn" class="toast-btn primary" type="button" title="View live console output">
+        <svg class="ui-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg> View Console
+      </button>
+      <button id="toast-stop-task-btn" class="toast-btn danger" type="button" title="Stop background command">
+        <svg class="ui-icon" aria-hidden="true"><use href="#icon-square"></use></svg> Stop
+      </button>
+    </div>
+  </div>
+
+  <!-- Command Console Modal -->
+  <div id="terminal-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="terminal-modal-title" hidden>
+    <div class="modal-content terminal-modal-dialog">
+      <div class="terminal-header">
+        <div class="terminal-title">
+          <span class="terminal-dot red"></span>
+          <span class="terminal-dot yellow"></span>
+          <span class="terminal-dot green"></span>
+          <h3 id="terminal-modal-title">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg>
+            Upgrade Command Console
+          </h3>
+        </div>
+        <button id="close-terminal-btn" class="quiet close-btn" type="button" aria-label="Close command console">
+          <svg class="ui-icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+      <div class="terminal-controls">
+        <div class="terminal-form-grid">
+          <label>
+            Subcommand
+            <select id="term-subcommand">
+              <option value="upgrade">upgrade (Autonomous End-to-End)</option>
+              <option value="audit">audit (Audit &amp; Plan)</option>
+              <option value="handoff">handoff (Sync to Git)</option>
+              <option value="doctor">doctor (Check Tools &amp; Environment)</option>
+              <option value="providers">providers (List AI Models)</option>
+              <option value="status">status (Check State)</option>
+            </select>
+          </label>
+          <label>
+            Project Root Path <span class="field-hint">(Locked to project)</span>
+            <input id="term-project-path" placeholder="/path/to/your-drupal-project" readonly tabindex="-1">
+          </label>
+          <label>
+            Local Site URL <span class="field-hint">(Locked to project)</span>
+            <input id="term-url" placeholder="https://my-site.ddev.site" readonly tabindex="-1">
+          </label>
+          <label>
+            AI Provider
+            <select id="term-provider">
+              <option value="gemini">Google Gemini (Default)</option>
+              <option value="claude">Claude</option>
+              <option value="openai">OpenAI (ChatGPT)</option>
+              <option value="ollama">Ollama (Local LLM)</option>
+              <option value="codex">Codex CLI</option>
+            </select>
+          </label>
+          <label>
+            Git Handoff Branch <span class="field-hint">(Locked to project)</span>
+            <input id="term-branch" value="upgrade/drupal-11" readonly tabindex="-1">
+          </label>
+        </div>
+        <div class="terminal-checkboxes">
+          <label class="check"><input id="term-flag-handoff" type="checkbox" checked> --handoff (Sync to Git on completion)</label>
+          <label class="check"><input id="term-flag-yes" type="checkbox" checked> -y (Non-interactive)</label>
+          <label class="check"><input id="term-flag-dryrun" type="checkbox"> --dry-run (Plan only)</label>
+        </div>
+        <div class="terminal-preview-bar">
+          <span class="muted">Command Preview:</span>
+          <code id="term-command-preview">bin/d11 upgrade ...</code>
+          <div class="terminal-action-btns">
+            <button id="term-run-btn" class="primary" type="button">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-play"></use></svg> Run in Browser
+            </button>
+            <button id="term-stop-btn" class="danger" type="button" disabled>
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-square"></use></svg> Stop
+            </button>
+            <button id="term-clear-btn" class="quiet" type="button">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg> Clear Screen
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="terminal-screen-wrapper">
+        <!-- Live Visual Phase Stepper / Timeline -->
+        <div id="term-timeline-bar" class="term-timeline-bar">
+          <div class="tstep" id="tstep-1" data-step="1">
+            <span class="tstep-badge">1</span>
+            <span class="tstep-label">Runtime</span>
+          </div>
+          <span class="tstep-separator"></span>
+          <div class="tstep" id="tstep-2" data-step="2">
+            <span class="tstep-badge">2</span>
+            <span class="tstep-label">Audit &amp; Baseline</span>
+          </div>
+          <span class="tstep-separator"></span>
+          <div class="tstep" id="tstep-3" data-step="3">
+            <span class="tstep-badge">3</span>
+            <span class="tstep-label">Remediate &amp; Plan</span>
+          </div>
+          <span class="tstep-separator"></span>
+          <div class="tstep" id="tstep-4" data-step="4">
+            <span class="tstep-badge">4</span>
+            <span class="tstep-label">Upgrade &amp; DB</span>
+          </div>
+          <span class="tstep-separator"></span>
+          <div class="tstep" id="tstep-5" data-step="5">
+            <span class="tstep-badge">5</span>
+            <span class="tstep-label">Verify &amp; Done</span>
+          </div>
+        </div>
+        <div id="term-screen-status" class="term-status-bar">
+          <div class="term-status-left">
+            <span id="term-liveness-pill" class="term-liveness-pill ready">● Ready</span>
+            <span id="term-status-text">Configure arguments above and click &quot;Run in Browser&quot;.</span>
+          </div>
+          <div class="term-status-right">
+            <span id="term-elapsed-timer" class="term-timer" hidden>00:00</span>
+          </div>
+        </div>
+        <pre id="terminal-screen" class="terminal-screen"></pre>
+      </div>
+      <div class="terminal-input-bar">
+        <span class="prompt-symbol">&gt;</span>
+        <input id="term-stdin-input" placeholder="Type input (e.g. Y / n) and press Enter..." autocomplete="off">
+        <button id="term-stdin-send" class="secondary" type="button">Send</button>
+        <div class="quick-responses">
+          <button id="term-quick-yes" class="quick-btn" type="button">Send [ Y ]</button>
+          <button id="term-quick-no" class="quick-btn" type="button">Send [ n ]</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" hidden>
+    <div class="modal-content settings-modal-dialog">
+      <div class="terminal-header">
+        <div class="terminal-title">
+          <span class="terminal-dot green"></span>
+          <h3 id="settings-modal-title">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg>
+            AI Provider &amp; Workbench Settings
+          </h3>
+        </div>
+        <button id="close-settings-btn" class="quiet close-btn" type="button" aria-label="Close settings">
+          <svg class="ui-icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+      <form id="settings-form" class="settings-form">
+        <div class="settings-form-body">
+          <p style="font-size:13px;color:var(--text-muted);margin:0 0 14px;">
+            Configure API credentials for automated Drupal 11 code remediation, patch generation, and package compatibility. Keys are saved to your local <code>.env</code> file.
+          </p>
+
+          <label>
+            Default AI Provider
+            <select id="settings-default-provider">
+              <option value="gemini">Google Gemini (Recommended — Free Tier Available)</option>
+              <option value="claude">Anthropic Claude</option>
+              <option value="openai">OpenAI (ChatGPT / GPT-4o)</option>
+              <option value="ollama">Ollama (Local Offline LLM)</option>
+            </select>
+          </label>
+
+          <fieldset id="settings-provider-gemini">
+            <legend>Google Gemini API Configuration</legend>
+            <label>
+              API Key (GEMINI_API_KEY)
+              <input id="settings-gemini-key" type="password" placeholder="AIzaSy... (leave blank to keep current)">
+              <small class="muted">Free API key at <a href="https://aistudio.google.com/" target="_blank" rel="noopener">Google AI Studio</a>.</small>
+            </label>
+            <label>
+              Model
+              <input id="settings-gemini-model" value="gemini-3.6-flash" placeholder="gemini-3.6-flash or gemini-3.5-flash">
+            </label>
+          </fieldset>
+
+          <fieldset id="settings-provider-claude" hidden>
+            <legend>Anthropic Claude API Configuration</legend>
+            <label>
+              API Key (ANTHROPIC_API_KEY)
+              <input id="settings-claude-key" type="password" placeholder="sk-ant-... (leave blank to keep current)">
+            </label>
+            <label>
+              Model
+              <input id="settings-claude-model" value="claude-3-5-sonnet-20241022" placeholder="claude-3-5-sonnet-20241022">
+            </label>
+          </fieldset>
+
+          <fieldset id="settings-provider-openai" hidden>
+            <legend>OpenAI API Configuration</legend>
+            <label>
+              API Key (OPENAI_API_KEY)
+              <input id="settings-openai-key" type="password" placeholder="sk-... (leave blank to keep current)">
+            </label>
+            <label>
+              Model
+              <input id="settings-openai-model" value="gpt-4o-mini" placeholder="gpt-4o-mini or gpt-4o">
+            </label>
+          </fieldset>
+
+          <fieldset id="settings-provider-ollama" hidden>
+            <legend>Local Ollama Configuration</legend>
+            <label>
+              Ollama Host URL
+              <input id="settings-ollama-host" value="http://localhost:11434" placeholder="http://localhost:11434">
+            </label>
+          </fieldset>
+        </div>
+
+        <div class="settings-form-footer">
+          <div id="settings-test-status" class="settings-status-box" style="margin:0;padding:8px 12px;border-radius:var(--radius-md);font-size:13px;display:none;flex:1;"></div>
+          <div style="display:flex;gap:10px;align-items:center;margin-left:auto;">
+            <button id="cancel-settings-btn" class="quiet" type="button">Cancel</button>
+            <button id="settings-test-btn" class="secondary" type="button">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-plug"></use></svg> Test Connection
+            </button>
+            <button id="settings-save-btn" class="primary" type="submit">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-save"></use></svg> Save Settings
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 1-Click Upgrade Confirmation Modal -->
+  <div id="upgrade-confirm-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" hidden>
+    <div class="modal-content confirm-modal-dialog" style="max-width:680px;background:var(--bg-surface);color:var(--text-main);border-radius:var(--radius-xl);overflow:hidden;box-shadow:var(--shadow-2xl);border:1px solid var(--border);display:flex;flex-direction:column;">
+      <div class="terminal-header" style="background:var(--bg-subtle);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;">
+        <div class="terminal-title" style="display:flex;align-items:center;gap:10px;">
+          <span class="terminal-dot green"></span>
+          <h3 id="confirm-modal-title" style="margin:0;font-size:15px;color:var(--text-main);font-weight:600;display:flex;align-items:center;gap:8px;">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-rocket"></use></svg>
+            Confirm 1-Click Drupal 11 Upgrade Rehearsal
+          </h3>
+        </div>
+        <button id="close-confirm-modal-btn" class="quiet close-btn" type="button" aria-label="Close upgrade confirmation">
+          <svg class="ui-icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+
+      <div class="confirm-modal-body" style="padding:20px 24px;max-height:calc(85vh - 130px);overflow-y:auto;">
+        <!-- Safety Guarantee Notice -->
+        <div style="background:var(--green-bg);border:1px solid var(--green-border);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:16px;display:flex;gap:12px;align-items:flex-start;">
+          <svg class="ui-icon" aria-hidden="true" style="color:var(--green);width:20px;height:20px;flex-shrink:0;margin-top:2px;"><use href="#icon-shield-check"></use></svg>
+          <div style="font-size:13px;color:var(--green-text);line-height:1.5;">
+            <strong>Safety &amp; Isolation Guaranteed:</strong>
+            A complete pre-upgrade database backup will be created automatically before any changes run. Upgrades execute in-place on a dedicated feature branch. You can roll back instantly at any time.
+          </div>
+        </div>
+
+        <!-- High-Attention Alert: Removals & Uninstalls -->
+        <div id="confirm-removals-alert" style="background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:16px;display:none;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <svg class="ui-icon" aria-hidden="true" style="color:var(--red);width:18px;height:18px;"><use href="#icon-alert-triangle"></use></svg>
+            <strong style="color:var(--red-text);font-size:13.5px;">Attention Required: Modules to Uninstall &amp; Remove (<span id="confirm-removals-count">0</span>)</strong>
+          </div>
+          <p style="margin:0 0 10px;font-size:12.5px;color:var(--red-text);line-height:1.4;">
+            The following extension(s) are selected for <strong>removal</strong> and will be uninstalled from Drupal and deleted from <code>composer.json</code>:
+          </p>
+          <div id="confirm-removals-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+
+        <!-- Blockers / Deferred Warning (if any) -->
+        <div id="confirm-blockers-alert" style="background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:16px;display:none;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <svg class="ui-icon" aria-hidden="true" style="color:var(--amber);width:18px;height:18px;"><use href="#icon-alert-triangle"></use></svg>
+            <strong style="color:var(--amber-text);font-size:13.5px;">Deferred / Blocked Extensions (<span id="confirm-blockers-count">0</span>)</strong>
+          </div>
+          <p style="margin:0 0 10px;font-size:12.5px;color:var(--amber-text);line-height:1.4;">
+            These extensions currently have no compatible candidate and will remain deferred:
+          </p>
+          <div id="confirm-blockers-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+
+        <!-- Upgrade Scope Summary -->
+        <h4 style="font-size:13px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin:0 0 10px;">Planned Actions Overview</h4>
+        <div class="confirm-scope-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:18px;">
+          <div style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 14px;">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Package Updates</div>
+            <div style="font-size:18px;font-weight:700;color:var(--blue);" id="confirm-stat-updates">0</div>
+            <div style="font-size:11px;color:var(--text-muted);">Upgrading to D11 releases</div>
+          </div>
+          <div style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 14px;">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Patches / AI Fixes</div>
+            <div style="font-size:18px;font-weight:700;color:var(--purple);" id="confirm-stat-patches">0</div>
+            <div style="font-size:11px;color:var(--text-muted);">Applying to composer.json</div>
+          </div>
+          <div style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 14px;">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Removals</div>
+            <div style="font-size:18px;font-weight:700;color:var(--red);" id="confirm-stat-removals">0</div>
+            <div style="font-size:11px;color:var(--text-muted);">Obsolete / uninstalled</div>
+          </div>
+          <div style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 14px;">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Already Compatible</div>
+            <div style="font-size:18px;font-weight:700;color:var(--green);" id="confirm-stat-keep">0</div>
+            <div style="font-size:11px;color:var(--text-muted);">Kept as-is</div>
+          </div>
+        </div>
+
+        <div id="confirm-baseline-notice" style="margin-top:12px;padding:10px 14px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12.5px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <svg class="ui-icon" aria-hidden="true" style="color:var(--emerald);width:16px;height:16px;flex-shrink:0;"><use href="#icon-camera"></use></svg>
+            <span id="confirm-baseline-text">Visual baseline ready. Gate 2 will generate side-by-side regression diffs.</span>
+          </div>
+          <button id="confirm-capture-baseline-btn" class="secondary" type="button" style="padding:4px 10px;font-size:11.5px;white-space:nowrap;display:none;flex-shrink:0;">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg> Capture Baseline Now
+          </button>
+        </div>
+
+
+        <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0;">
+          Clicking <strong>Confirm &amp; Start Upgrade</strong> will save all current decisions, update <code>composer.json</code>, apply patches, run database updates, and verify runtime health.
+        </p>
+      </div>
+
+      <div class="confirm-modal-footer" style="padding:14px 20px;border-top:1px solid var(--border);background:var(--bg-subtle);display:flex;justify-content:flex-end;gap:10px;align-items:center;">
+        <button id="cancel-confirm-modal-btn" class="secondary" type="button">
+          Cancel &amp; Review Matrix
+        </button>
+        <button id="execute-confirm-upgrade-btn" class="primary" type="button">
+          <svg class="ui-icon" aria-hidden="true"><use href="#icon-rocket"></use></svg>
+          Confirm &amp; Start Upgrade →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Universal Confirmation & Alert Modal Component (Replaces browser default confirm/alert) -->
+  <div id="app-confirm-modal" class="modal" role="alertdialog" aria-modal="true" aria-labelledby="app-confirm-title" aria-describedby="app-confirm-message" hidden>
+    <div class="modal-content app-confirm-dialog">
+      <div class="terminal-header app-confirm-header">
+        <div class="terminal-title">
+          <span id="app-confirm-dot" class="terminal-dot red"></span>
+          <h3 id="app-confirm-title">
+            <svg class="ui-icon" id="app-confirm-icon" aria-hidden="true"><use href="#icon-alert-triangle"></use></svg>
+            <span id="app-confirm-heading-text">Confirm Action</span>
+          </h3>
+        </div>
+        <button id="app-confirm-close-btn" class="quiet close-btn" type="button" aria-label="Close dialog">
+          <svg class="ui-icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+
+      <div class="app-confirm-body">
+        <p id="app-confirm-message" class="app-confirm-message"></p>
+        <div id="app-confirm-detail" class="app-confirm-detail" style="display:none;"></div>
+      </div>
+
+      <div class="app-confirm-footer">
+        <button id="app-confirm-cancel-btn" class="secondary" type="button">Cancel</button>
+        <button id="app-confirm-submit-btn" class="danger" type="button">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Upgrade Summary Modal -->
+  <div id="ai-summary-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="ai-summary-title" hidden>
+    <div class="modal-content" style="max-width:760px;background:var(--bg-surface);color:var(--text-main);border-radius:var(--radius-xl);overflow:hidden;box-shadow:var(--shadow-2xl);border:1px solid var(--border);display:flex;flex-direction:column;max-height:90vh;">
+      <div class="terminal-header" style="background:var(--bg-elevated);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <svg class="ui-icon" style="color:var(--purple-text, #7c3aed);width:22px;height:22px;" aria-hidden="true"><use href="#icon-sparkles"></use></svg>
+          <h3 id="ai-summary-title" style="margin:0;font-size:16px;">AI Generated PR &amp; Executive Upgrade Summary</h3>
+        </div>
+        <button id="ai-summary-close-btn" class="quiet close-btn" type="button" aria-label="Close summary modal">
+          <svg class="ui-icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+      <div style="padding:16px 20px;overflow-y:auto;flex:1;">
+        <p class="muted" style="margin-top:0;font-size:13px;">Copy this structured summary directly into your GitHub / GitLab Pull Request description and JIRA ticket updates.</p>
+        <div id="ai-summary-loading" style="text-align:center;padding:30px 0;display:none;">
+          <p style="font-weight:600;margin:0;color:var(--purple-text, #7c3aed);">⚡ Synthesizing Upgrade Handoff Summary with AI...</p>
+        </div>
+        <pre id="ai-summary-text" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;font-size:12.5px;line-height:1.5;white-space:pre-wrap;font-family:monospace;max-height:500px;overflow-y:auto;user-select:all;"></pre>
+      </div>
+      <div style="background:var(--bg-subtle);padding:12px 20px;display:flex;justify-content:flex-end;gap:12px;border-top:1px solid var(--border);">
+        <button id="ai-summary-copy-btn" class="primary" type="button" style="font-weight:600;">
+          <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> Copy to Clipboard
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audit & Run History Modal -->
+  <div id="runs-history-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="runs-history-title" hidden>
+    <div class="modal-content runs-history-modal-dialog" style="max-width:860px;background:var(--bg-surface);color:var(--text-main);border-radius:var(--radius-xl);overflow:hidden;box-shadow:var(--shadow-2xl);border:1px solid var(--border);display:flex;flex-direction:column;max-height:90vh;">
+      <div class="terminal-header" style="background:var(--bg-subtle);padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <svg class="ui-icon" style="color:var(--primary);width:20px;height:20px;" aria-hidden="true"><use href="#icon-clock"></use></svg>
+          <div>
+            <h3 id="runs-history-title" style="margin:0;font-size:15px;font-weight:600;">Audit &amp; Run History — <span id="runs-history-project-name">Project</span></h3>
+            <p class="muted" style="margin:2px 0 0;font-size:12px;">Manage previous audit scans, visual baselines, and rehearsal runs for this project.</p>
+          </div>
+        </div>
+        <button id="close-runs-history-btn" class="quiet close-btn" type="button" aria-label="Close run history modal">
+          <svg class="ui-icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+
+      <!-- Quick Action Controls -->
+      <div style="padding:12px 20px;background:var(--bg-card);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span class="muted" style="font-size:12px;">Filter:</span>
+          <button type="button" class="pill-btn active" id="filter-runs-all" data-filter-action="all">All (<span id="count-all-runs">0</span>)</button>
+          <button type="button" class="pill-btn" id="filter-runs-audit" data-filter-action="guided-audit">Audits (<span id="count-audit-runs">0</span>)</button>
+          <button type="button" class="pill-btn" id="filter-runs-upgrade" data-filter-action="guided-upgrade">Upgrades (<span id="count-upgrade-runs">0</span>)</button>
+          <button type="button" class="pill-btn" id="filter-runs-rollback" data-filter-action="guided-rollback">Rollbacks (<span id="count-rollback-runs">0</span>)</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" id="btn-delete-old-audits" class="danger" style="font-size:12px;padding:6px 12px;display:flex;align-items:center;gap:5px;font-weight:600;" title="Delete all older audit scans for this project, keeping the latest one">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg> Delete Older Audits (Keep Latest)
+          </button>
+          <button type="button" id="btn-prune-runs" class="secondary" style="font-size:12px;padding:6px 12px;display:flex;align-items:center;gap:5px;" title="Prune older runs across workbench storage, retaining the 3 most recent">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-rotate-ccw"></use></svg> Prune (Keep 3)
+          </button>
+        </div>
+      </div>
+
+      <!-- Runs List Container -->
+      <div style="padding:16px 20px;overflow-y:auto;flex:1;max-height:calc(85vh - 170px);">
+        <div id="runs-history-loading" style="text-align:center;padding:30px 0;display:none;">
+          <span class="live-pulse-dot"></span>
+          <span style="font-size:13px;color:var(--text-secondary);margin-left:8px;">Loading run history...</span>
+        </div>
+        <div id="runs-history-empty" style="text-align:center;padding:40px 20px;color:var(--text-muted);display:none;">
+          <svg class="ui-icon" style="width:36px;height:36px;opacity:0.4;margin-bottom:8px;" aria-hidden="true"><use href="#icon-clock"></use></svg>
+          <p style="margin:0;font-size:14px;font-weight:500;">No runs found for this project</p>
+          <p style="margin:4px 0 0;font-size:12px;">Run a Test Audit scan to generate compatibility evidence and visual baselines.</p>
+        </div>
+        <table id="runs-history-table" class="runs-history-table" style="width:100%;border-collapse:collapse;font-size:13px;display:none;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border);text-align:left;color:var(--text-muted);font-size:11.5px;text-transform:uppercase;letter-spacing:0.5px;">
+              <th style="padding:8px 10px;">Date &amp; Time</th>
+              <th style="padding:8px 10px;">Action / Stage</th>
+              <th style="padding:8px 10px;">Status</th>
+              <th style="padding:8px 10px;">Checkpoint</th>
+              <th style="padding:8px 10px;text-align:right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="runs-history-tbody"></tbody>
+        </table>
+      </div>
+
+      <div style="background:var(--bg-subtle);padding:10px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-muted);">
+        <span>💡 Deleting a run frees disk space by permanently removing its snapshots, reports, and screenshots.</span>
+        <button id="close-runs-history-btn2" class="secondary" type="button" style="padding:5px 12px;">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Commands & AI Prompts Guide Modal -->
+  <div id="guide-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="guide-modal-title" hidden>
+    <div class="modal-content guide-modal-dialog">
+      <div class="terminal-header guide-header">
+        <div class="terminal-title">
+          <svg class="ui-icon" style="color:var(--pantheon-yellow);width:22px;height:22px;" aria-hidden="true"><use href="#icon-book-open"></use></svg>
+          <div>
+            <h3 id="guide-modal-title">Promet Drupal Workbench — Developer Commands &amp; AI Prompts Guide</h3>
+            <p class="muted guide-subtitle">Interactive reference catalog of CLI commands, workflow recipes, and sample AI prompts for developers and autonomous agents.</p>
+          </div>
+        </div>
+        <button id="close-guide-btn" class="quiet close-btn" type="button" aria-label="Close guide modal">
+          <svg class="ui-icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+
+      <div class="guide-toolbar">
+        <div class="guide-tabs" role="tablist">
+          <button type="button" class="guide-tab-btn active" data-guide-tab="commands" role="tab" aria-selected="true">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg> CLI Commands Catalog
+          </button>
+          <button type="button" class="guide-tab-btn" data-guide-tab="prompts" role="tab" aria-selected="false">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-sparkles"></use></svg> Sample AI Prompts
+          </button>
+          <button type="button" class="guide-tab-btn" data-guide-tab="skills" role="tab" aria-selected="false">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-shield-check"></use></svg> Two-Gate Safety &amp; Skills
+          </button>
+        </div>
+        <div class="guide-search-wrapper">
+          <svg class="ui-icon search-icon" aria-hidden="true"><use href="#icon-search"></use></svg>
+          <input id="guide-search-input" type="text" placeholder="Filter commands &amp; prompts (e.g. rollback, rector, modules, csv, audit)..." autocomplete="off" aria-label="Filter commands and prompts">
+          <button id="guide-search-clear" class="quiet" type="button" aria-label="Clear search" style="display:none;">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="guide-body" id="guide-body">
+        <!-- Tab 1: CLI Commands Catalog -->
+        <div id="guide-panel-commands" class="guide-panel active">
+          <div class="guide-section-intro">
+            <h4>Command-Line Subcommands</h4>
+            <p class="muted">Run these commands from the terminal in <code id="guide-workbench-root">./</code> or directly in your Drupal project directory.</p>
+            <div class="guide-context-bar" id="guide-context-bar">
+              <div class="guide-context-info">
+                <span class="guide-context-badge">Active Context</span>
+                <span class="guide-context-name" id="guide-ctx-name">No project selected</span>
+                <code class="guide-context-path" id="guide-ctx-path">/path/to/drupal-project</code>
+                <span class="guide-context-url muted" id="guide-ctx-url"></span>
+              </div>
+              <div class="guide-context-controls">
+                <button type="button" class="btn btn-sm btn-ghost active" id="guide-mode-active-btn" onclick="setGuidePathMode('active')" title="Format commands using the active project's exact local path and URL">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-check-circle"></use></svg> <span>Project-Specific</span>
+                </button>
+                <button type="button" class="btn btn-sm btn-ghost" id="guide-mode-portable-btn" onclick="setGuidePathMode('portable')" title="Format commands using portable placeholders">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-file"></use></svg> <span>Portable / Relative</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="guide-cards-grid">
+            <!-- Command: Start Dashboard -->
+            <div class="guide-card" data-keywords="dashboard web ui server gui start port 8765 workbench">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-safe">🟢 Safe (Read-only UI)</span>
+                <span class="guide-category">GUI Dashboard</span>
+              </div>
+              <h5>Start Workbench Web Dashboard</h5>
+              <p>Launches the Promet Drupal Workbench single-page web interface on localhost.</p>
+              <div class="code-box">
+                <pre><code id="cmd-dashboard-code">./bin/d11 dashboard --port 8765 --no-open</code></pre>
+                <button class="guide-copy-btn" id="cmd-dashboard-btn" type="button" data-copy="./bin/d11 dashboard --port 8765 --no-open" title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Command: Autonomous Upgrade -->
+            <div class="guide-card" data-keywords="upgrade rehearsal autonomous end-to-end full execution composer database">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-mutation">⚡ Rehearsal Mutation</span>
+                <span class="guide-category">End-to-End Upgrade</span>
+              </div>
+              <h5>Autonomous End-to-End Upgrade Rehearsal</h5>
+              <p>Takes pre-upgrade DB dump, creates zero-copy Git branch, updates core to D11, applies remediations, runs updatedb, and captures visual regression.</p>
+              <div class="code-box">
+                <pre><code id="cmd-upgrade-code">./bin/d11 upgrade . -y</code></pre>
+                <button class="guide-copy-btn" id="cmd-upgrade-btn" type="button" data-copy="./bin/d11 upgrade . -y" title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Command: Non-Destructive Audit -->
+            <div class="guide-card" data-keywords="audit scan non-destructive baseline evidence disposable mariadb upgrade status">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-safe">🟢 100% Non-Destructive</span>
+                <span class="guide-category">Gate 1 Audit</span>
+              </div>
+              <h5>Non-Destructive Audit Scan</h5>
+              <p>Runs Upgrade Status and Rector inside a disposable MariaDB container. Client database and codebase files are never modified.</p>
+              <div class="code-box">
+                <pre><code id="cmd-audit-code">./bin/d11 audit .</code></pre>
+                <button class="guide-copy-btn" id="cmd-audit-btn" type="button" data-copy="./bin/d11 audit ." title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Command: Project Registration -->
+            <div class="guide-card" data-keywords="init register project zero-copy branch url profile">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-safe">🟢 Safe</span>
+                <span class="guide-category">Intake &amp; Setup</span>
+              </div>
+              <h5>Register / Initialize Drupal Project</h5>
+              <p>Detects Docker environment (Docksal, DDEV, Lando) and initializes project config without modifying project repo.</p>
+              <div class="code-box">
+                <pre><code id="cmd-init-code">./bin/d11 init . -y --url http://my-site.docksal.site --project my-site</code></pre>
+                <button class="guide-copy-btn" id="cmd-init-btn" type="button" data-copy="./bin/d11 init . -y --url http://my-site.docksal.site --project my-site" title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Command: Rollback -->
+            <div class="guide-card" data-keywords="rollback restore pre-upgrade undo 1-click clean git database sql gz">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-rollback">🔄 1-Click Rollback</span>
+                <span class="guide-category">Safety &amp; Recovery</span>
+              </div>
+              <h5>Instantaneous 1-Click Rollback</h5>
+              <p>Restores database from <code>pre-upgrade.sql.gz</code>, resets Git branch to pre-upgrade commit, restores vendor packages, and verifies HTTP 200.</p>
+              <div class="code-box">
+                <pre><code id="cmd-rollback-code">./bin/d11 workflow rollback --project &lt;PROJECT&gt; --run &lt;RUN_ID&gt;</code></pre>
+                <button class="guide-copy-btn" id="cmd-rollback-btn" type="button" data-copy="./bin/d11 workflow rollback --project my-project --run $RUN_ID" title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Command: Module Transition CSV -->
+            <div class="guide-card" data-keywords="modules csv report transition export audit d10 d11 versions spreadsheet client">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-report">📊 Report Export</span>
+                <span class="guide-category">Audit &amp; Reporting</span>
+              </div>
+              <h5>Export D10 vs D11 Module Transition Matrix (CSV)</h5>
+              <p>Generates a complete spreadsheet classifying extensions into Removed, Updated, Patched, Remained Same, and Uninstalled Packages.</p>
+              <div class="code-box">
+                <pre><code id="cmd-modules-csv-code">./bin/d11 workflow modules --project &lt;PROJECT&gt; --csv &gt; d10_d11_modules.csv</code></pre>
+                <button class="guide-copy-btn" id="cmd-modules-csv-btn" type="button" data-copy="./bin/d11 workflow modules --project my-project --csv > d10_d11_modules.csv" title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Command: Module Transition JSON -->
+            <div class="guide-card" data-keywords="modules json report transition breakdown extensions counters api">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-report">📊 JSON Report</span>
+                <span class="guide-category">Audit &amp; Reporting</span>
+              </div>
+              <h5>D10 vs D11 Module Transition Report (JSON)</h5>
+              <p>Returns structured JSON summary counters and itemized records of all extension version changes and actions taken.</p>
+              <div class="code-box">
+                <pre><code id="cmd-modules-json-code">./bin/d11 workflow modules --project &lt;PROJECT&gt;</code></pre>
+                <button class="guide-copy-btn" id="cmd-modules-json-btn" type="button" data-copy="./bin/d11 workflow modules --project my-project" title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Command: Rector Auto-Remediate -->
+            <div class="guide-card" data-keywords="rector auto-remediate custom code deprecations refactor diff fixes modules custom">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-mutation">🩹 Automated Fixes</span>
+                <span class="guide-category">Custom Code</span>
+              </div>
+              <h5>Automated Rector Code Remediation</h5>
+              <p>Generates deterministic deprecation refactorings for custom modules and themes in an isolated container.</p>
+              <div class="code-box">
+                <pre><code id="cmd-rector-code">./bin/d11 workflow auto-remediate --run &lt;RUN_ID&gt;</code></pre>
+                <button class="guide-copy-btn" id="cmd-rector-btn" type="button" data-copy="./bin/d11 workflow auto-remediate --run $RUN_ID" title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Command: Auto-Decide -->
+            <div class="guide-card" data-keywords="auto-decide decisions compatibility align keep compatible release remove obsolete">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-safe">🟢 Planning</span>
+                <span class="guide-category">Compatibility Engine</span>
+              </div>
+              <h5>Auto-Resolve Compatibility Decisions</h5>
+              <p>Automatically resolves all decisions: compatible releases, clean extension keep decisions, and obsolete module removals.</p>
+              <div class="code-box">
+                <pre><code id="cmd-decide-code">./bin/d11 workflow auto-decide --run &lt;RUN_ID&gt;</code></pre>
+                <button class="guide-copy-btn" id="cmd-decide-btn" type="button" data-copy="./bin/d11 workflow auto-decide --run $RUN_ID" title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Command: Doctor -->
+            <div class="guide-card" data-keywords="doctor verify check prerequisites docker composer php drush environment">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-safe">🟢 System Check</span>
+                <span class="guide-category">Prerequisites</span>
+              </div>
+              <h5>Doctor: Environment Diagnostics</h5>
+              <p>Validates Docker Desktop, Composer CLI, PHP version, Drush environment, and required toolchains.</p>
+              <div class="code-box">
+                <pre><code id="cmd-doctor-code">./bin/d11 doctor</code></pre>
+                <button class="guide-copy-btn" id="cmd-doctor-btn" type="button" data-copy="./bin/d11 doctor" title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Command: Providers -->
+            <div class="guide-card" data-keywords="providers ai gemini claude openai ollama codex test keys models">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-safe">🟢 AI Diagnostics</span>
+                <span class="guide-category">AI Providers</span>
+              </div>
+              <h5>Inspect &amp; Test AI Providers</h5>
+              <p>Tests connectivity and model availability for Gemini, Claude, OpenAI, Ollama, and Codex CLI.</p>
+              <div class="code-box">
+                <pre><code>./bin/d11 providers</code></pre>
+                <button class="guide-copy-btn" type="button" data-copy="./bin/d11 providers" title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Command: Clear Lock -->
+            <div class="guide-card" data-keywords="lock workflow lock clear release rm troubleshoot only one workflow may run">
+              <div class="guide-card-header">
+                <span class="guide-tag tag-troubleshoot">🔧 Troubleshooting</span>
+                <span class="guide-category">Maintenance</span>
+              </div>
+              <h5>Clear Interrupted Workflow Lock</h5>
+              <p>Releases execution lock if a previous terminal command or background scan was forcefully terminated.</p>
+              <div class="code-box">
+                <pre><code>rm -f ~/.d11/workflow.lock</code></pre>
+                <button class="guide-copy-btn" type="button" data-copy="rm -f ~/.d11/workflow.lock" title="Copy command">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Sample AI Prompts -->
+        <div id="guide-panel-prompts" class="guide-panel" hidden>
+          <div class="guide-section-intro">
+            <h4>Sample AI Agent Prompts</h4>
+            <p class="muted">Copy and paste these prompts directly into Antigravity (<code>agy</code>), Claude Code, Cursor, or Codex to autonomously orchestrate upgrades.</p>
+          </div>
+
+          <div class="guide-prompts-list">
+            <!-- Prompt 1: Full Hands-Free Rehearsal -->
+            <div class="guide-prompt-card" data-keywords="prompt autonomous full rehearsal hands-free upgrade end-to-end agy claude cursor">
+              <div class="guide-prompt-header">
+                <div class="guide-prompt-meta">
+                  <span class="guide-tag tag-mutation">Full Workflow</span>
+                  <h5>Autonomous Hands-Free Upgrade Rehearsal</h5>
+                </div>
+                <button class="guide-copy-btn" id="prompt-full-btn" type="button" data-copy="" title="Copy prompt">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy Prompt</span>
+                </button>
+              </div>
+              <p class="guide-prompt-desc">Directs an AI agent to verify prerequisites, initialize the project, conduct the full rehearsal, and report Gate 1 and Gate 2 results.</p>
+              <div class="prompt-text-box">
+                <pre><code id="prompt-full-code">Loading prompt...</code></pre>
+              </div>
+            </div>
+
+            <!-- Prompt 2: Non-Destructive Audit -->
+            <div class="guide-prompt-card" data-keywords="prompt audit triage non-destructive gate 1 compatibility analysis blockers">
+              <div class="guide-prompt-header">
+                <div class="guide-prompt-meta">
+                  <span class="guide-tag tag-safe">Gate 1 Audit</span>
+                  <h5>Non-Destructive Audit &amp; Compatibility Triage</h5>
+                </div>
+                <button class="guide-copy-btn" id="prompt-audit-btn" type="button" data-copy="" title="Copy prompt">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy Prompt</span>
+                </button>
+              </div>
+              <p class="guide-prompt-desc">Audits extensions inside the isolated container and presents a pre-upgrade Gate 1 proposal without modifying code.</p>
+              <div class="prompt-text-box">
+                <pre><code id="prompt-audit-code">Loading prompt...</code></pre>
+              </div>
+            </div>
+
+            <!-- Prompt 3: Custom Code Remediation -->
+            <div class="guide-prompt-card" data-keywords="prompt rector custom code remediation deprecations themes modules refactor">
+              <div class="guide-prompt-header">
+                <div class="guide-prompt-meta">
+                  <span class="guide-tag tag-mutation">Custom Code</span>
+                  <h5>Custom Code &amp; Theme Deprecation Remediation (Rector + AI)</h5>
+                </div>
+                <button class="guide-copy-btn" id="prompt-rector-btn" type="button" data-copy="" title="Copy prompt">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy Prompt</span>
+                </button>
+              </div>
+              <p class="guide-prompt-desc">Executes Drupal Rector on custom code and guides the AI assistant in verifying PHPStan and Drupal 11 core API adherence.</p>
+              <div class="prompt-text-box">
+                <pre><code id="prompt-rector-code">Loading prompt...</code></pre>
+              </div>
+            </div>
+
+            <!-- Prompt 4: Module Transition Report -->
+            <div class="guide-prompt-card" data-keywords="prompt module transition report csv export client audit d10 d11 versions">
+              <div class="guide-prompt-header">
+                <div class="guide-prompt-meta">
+                  <span class="guide-tag tag-report">Reporting</span>
+                  <h5>Post-Upgrade Module Transition Report &amp; Client Sign-off CSV</h5>
+                </div>
+                <button class="guide-copy-btn" id="prompt-modules-btn" type="button" data-copy="" title="Copy prompt">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy Prompt</span>
+                </button>
+              </div>
+              <p class="guide-prompt-desc">Pulls the D10 vs D11 module audit matrix and produces an executive breakdown suitable for stakeholder sign-off.</p>
+              <div class="prompt-text-box">
+                <pre><code id="prompt-modules-code">Loading prompt...</code></pre>
+              </div>
+            </div>
+
+            <!-- Prompt 5: 1-Click Rollback -->
+            <div class="guide-prompt-card" data-keywords="prompt rollback restore clean git database pre-upgrade verification">
+              <div class="guide-prompt-header">
+                <div class="guide-prompt-meta">
+                  <span class="guide-tag tag-rollback">Rollback</span>
+                  <h5>Instantaneous 1-Click Rollback Verification</h5>
+                </div>
+                <button class="guide-copy-btn" id="prompt-rollback-btn" type="button" data-copy="" title="Copy prompt">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy Prompt</span>
+                </button>
+              </div>
+              <p class="guide-prompt-desc">Executes the guided rollback and rigorously validates database restoration, git branch cleanliness, and HTTP 200 health.</p>
+              <div class="prompt-text-box">
+                <pre><code id="prompt-rollback-code">Loading prompt...</code></pre>
+              </div>
+            </div>
+
+            <!-- Prompt 6: Skill & AGENTS.md Orchestration -->
+            <div class="guide-prompt-card" data-keywords="prompt skill agents md rules lifecycle safety two-gate zero-copy">
+              <div class="guide-prompt-header">
+                <div class="guide-prompt-meta">
+                  <span class="guide-tag tag-safe">Skill &amp; AGENTS.md</span>
+                  <h5>Skill &amp; Two-Gate Lifecycle Orchestration</h5>
+                </div>
+                <button class="guide-copy-btn" id="prompt-skills-btn" type="button" data-copy="Activate the `drupal-11-upgrade-readiness` skill and review AGENTS.md rules.
+Coordinate with the Promet Drupal Workbench to orchestrate an upgrade rehearsal for this repository.
+Follow the strict two-gate lifecycle:
+- Gate 1: Non-destructive scan in disposable container, 0 unresolved extensions, SHA-256 evidence validation.
+- Gate 2: Atomic recovery checkpoint, mutation, Drush updatedb, and visual diff verification.
+Never embed upgrade tools or vendor scripts into the client project repository. Keep all mutations isolated to the dedicated zero-copy upgrade branch." title="Copy prompt">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg> <span>Copy Prompt</span>
+                </button>
+              </div>
+              <p class="guide-prompt-desc">Ensures the AI assistant abides by AGENTS.md constraints and uses the centralized workbench externally.</p>
+              <div class="prompt-text-box">
+                <pre><code id="prompt-skills-code">Activate the `drupal-11-upgrade-readiness` skill and review AGENTS.md rules.
+Coordinate with the Promet Drupal Workbench to orchestrate an upgrade rehearsal for this repository.
+Follow the strict two-gate lifecycle:
+- Gate 1: Non-destructive scan in disposable container, 0 unresolved extensions, SHA-256 evidence validation.
+- Gate 2: Atomic recovery checkpoint, mutation, Drush updatedb, and visual diff verification.
+Never embed upgrade tools or vendor scripts into the client project repository. Keep all mutations isolated to the dedicated zero-copy upgrade branch.</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Two-Gate Safety & Skills -->
+        <div id="guide-panel-skills" class="guide-panel" hidden>
+          <div class="guide-section-intro">
+            <h4>Architecture, Two-Gate Safety &amp; Invariants</h4>
+            <p class="muted">Key principles that guarantee 100% non-destructive rehearsals and clean developer repositories.</p>
+          </div>
+
+          <div class="guide-safety-grid">
+            <div class="guide-safety-card">
+              <div class="safety-icon-box">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-shield-check"></use></svg>
+              </div>
+              <div class="safety-content">
+                <h6>1. Centralized &amp; Non-Invasive Workbench</h6>
+                <p>The Workbench operates externally from its own directory (detected at <code id="guide-safety-wb-path">./</code>). Never copy, submodule, or commit upgrade tools into client Drupal repositories. Developers can clone and run the Workbench from any location of their choice; client Drupal codebases remain completely untouched and clean.</p>
+              </div>
+            </div>
+
+            <div class="guide-safety-card">
+              <div class="safety-icon-box">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-database"></use></svg>
+              </div>
+              <div class="safety-content">
+                <h6>2. Disposable Container Scans</h6>
+                <p>During Gate 1 audits, Drush, Upgrade Status, and Drupal Rector execute inside an isolated MariaDB container (<code>db:3306</code>). The developer's live database is never touched prior to upgrade approval.</p>
+              </div>
+            </div>
+
+            <div class="guide-safety-card">
+              <div class="safety-icon-box">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-save"></use></svg>
+              </div>
+              <div class="safety-content">
+                <h6>3. Atomic Recovery Checkpoints</h6>
+                <p>Before any file is edited or any Composer update executes, the engine dumps <code>pre-upgrade.sql.gz</code> and records the pre-upgrade Git HEAD commit hash.</p>
+              </div>
+            </div>
+
+            <div class="guide-safety-card">
+              <div class="safety-icon-box">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-zap"></use></svg>
+              </div>
+              <div class="safety-content">
+                <h6>4. Smart Static Analysis</h6>
+                <p>Contrib extensions follow upstream Drupal.org packaging. Contrib PHPStan is skipped (<code>--ignore-contrib</code>) to accelerate scans from 15 minutes to ~1 minute, focusing deep static analysis on <strong>custom code</strong>.</p>
+              </div>
+            </div>
+
+            <div class="guide-safety-card">
+              <div class="safety-icon-box">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-rotate-ccw"></use></svg>
+              </div>
+              <div class="safety-content">
+                <h6>5. Guaranteed 1-Click Clean Rollback</h6>
+                <p>Rollback restores <code>pre-upgrade.sql.gz</code>, resets the Git working tree to the pre-upgrade commit, re-runs Composer install, and validates site health with HTTP 200.</p>
+              </div>
+            </div>
+
+            <div class="guide-safety-card">
+              <div class="safety-icon-box">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-check-circle"></use></svg>
+              </div>
+              <div class="safety-content">
+                <h6>6. Strict "Keep" Decision Invariant</h6>
+                <p>An extension can <strong>never</strong> be assigned <code>action: "keep"</code> if it has deprecation notices or PHPStan issues. Any extension with findings must use <code>compatible_release</code> or remediation.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="guide-footer">
+        <span class="muted"><svg class="ui-icon" style="width:14px;height:14px;"><use href="#icon-file-text"></use></svg> Full Documentation available in <code>docs/commands-and-prompts.md</code></span>
+        <button id="close-guide-footer-btn" class="secondary" type="button">Close Guide</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Open-Source Lucide SVG Icon Catalog (ISC License: https://lucide.dev) -->
+  <svg id="icon-sprite" hidden aria-hidden="true" width="0" height="0" style="display:none;position:absolute;width:0;height:0;overflow:hidden;" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+    </symbol>
+    <symbol id="icon-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+    </symbol>
+    <symbol id="icon-droplet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"></path>
+    </symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14"></path><path d="M12 5v14"></path>
+    </symbol>
+    <symbol id="icon-plus-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle><path d="M8 12h8"></path><path d="M12 8v8"></path>
+    </symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+      <path d="M21 3v5h-5"></path>
+      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+      <path d="M8 16H3v5"></path>
+    </symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+      <circle cx="12" cy="12" r="3"></circle>
+    </symbol>
+    <symbol id="icon-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="4 17 10 11 4 5"></polyline><line x1="12" x2="20" y1="19" y2="19"></line>
+    </symbol>
+    <symbol id="icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+    </symbol>
+    <symbol id="icon-shield-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path><path d="m9 12 2 2 4-4"></path>
+    </symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path>
+    </symbol>
+    <symbol id="icon-shield-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line>
+    </symbol>
+    <symbol id="icon-rocket" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path>
+      <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path>
+      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path>
+      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+    </symbol>
+    <symbol id="icon-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect>
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+    </symbol>
+    <symbol id="icon-clipboard-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect>
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+      <path d="M12 11h4"></path><path d="M12 16h4"></path><path d="M8 11h.01"></path><path d="M8 16h.01"></path>
+    </symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>
+    </symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>
+    </symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </symbol>
+    <symbol id="icon-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>
+    </symbol>
+    <symbol id="icon-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>
+    </symbol>
+    <symbol id="icon-x-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path>
+    </symbol>
+    <symbol id="icon-alert-triangle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+      <line x1="12" x2="12" y1="9" y2="13"></line><line x1="12" x2="12.01" y1="17" y2="17"></line>
+    </symbol>
+    <symbol id="icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="6 3 20 12 6 21 6 3"></polygon>
+    </symbol>
+    <symbol id="icon-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+    </symbol>
+    <symbol id="icon-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path>
+      <circle cx="12" cy="13" r="3"></circle>
+    </symbol>
+    <symbol id="icon-rotate-ccw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path>
+    </symbol>
+    <symbol id="icon-file-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 12.5 8 15l2 2.5"></path><path d="m14 12.5 2 2.5-2 2.5"></path>
+      <path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"></path>
+    </symbol>
+    <symbol id="icon-file-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path>
+      <path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path>
+    </symbol>
+    <symbol id="icon-book-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+    </symbol>
+    <symbol id="icon-printer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 9 6 2 18 2 18 9"></polyline>
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+      <rect width="12" height="8" x="6" y="14"></rect>
+    </symbol>
+    <symbol id="icon-external-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 3h6v6"></path><path d="M10 14 21 3"></path>
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+    </symbol>
+    <symbol id="icon-git-branch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="6" x2="6" y1="3" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle>
+      <path d="M18 9a9 9 0 0 1-9 9"></path>
+    </symbol>
+    <symbol id="icon-package" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m7.5 4.27 9 5.15"></path>
+      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+      <path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path>
+    </symbol>
+    <symbol id="icon-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
+      <path d="M5 3v4"></path><path d="M19 17v4"></path><path d="M3 5h4"></path><path d="M17 19h4"></path>
+    </symbol>
+    <symbol id="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path>
+      <path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path>
+      <path d="M2 12h2"></path><path d="M20 12h2"></path>
+      <path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path>
+    </symbol>
+    <symbol id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+    </symbol>
+    <symbol id="icon-laptop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="20" height="14" x="2" y="3" rx="2"></rect><line x1="8" x2="16" y1="21" y2="21"></line><line x1="12" x2="12" y1="17" y2="21"></line>
+    </symbol>
+    <symbol id="icon-wrench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+    </symbol>
+    <symbol id="icon-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+    </symbol>
+    <symbol id="icon-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+      <polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline>
+    </symbol>
+    <symbol id="icon-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22v-5"></path><path d="M9 8V2"></path><path d="M15 2v6"></path>
+      <path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"></path>
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+    </symbol>
+    <symbol id="icon-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path>
+    </symbol>
+    <symbol id="icon-arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path>
+    </symbol>
+    <symbol id="icon-arrow-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m5 12 7-7 7 7"></path><path d="M12 19V5"></path>
+    </symbol>
+    <symbol id="icon-arrow-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 5v14"></path><path d="m19 12-7 7-7-7"></path>
+    </symbol>
+    <symbol id="icon-tool" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+    </symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+      <polyline points="7 10 12 15 17 10"></polyline>
+      <line x1="12" y1="15" x2="12" y2="3"></line>
+    </symbol>
+    <symbol id="icon-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+      <polyline points="14 2 14 8 20 8"></polyline>
+    </symbol>
+    <symbol id="icon-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+    </symbol>
+    <symbol id="icon-arrow-right-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle><path d="M8 12h8"></path><path d="m12 8 4 4-4 4"></path>
+    </symbol>
+    <symbol id="icon-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="16" height="16" x="4" y="4" rx="2"></rect><rect width="6" height="6" x="9" y="9" rx="1"></rect>
+      <path d="M15 2v2"></path><path d="M15 20v2"></path><path d="M2 15h2"></path><path d="M2 9h2"></path>
+      <path d="M20 15h2"></path><path d="M20 9h2"></path><path d="M9 2v2"></path><path d="M9 20v2"></path>
+    </symbol>
+    <symbol id="icon-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path>
+    </symbol>
+    <symbol id="icon-compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+    </symbol>
+    <symbol id="icon-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path>
+      <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"></path><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"></path>
+    </symbol>
+    <symbol id="icon-columns" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7m0-18H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7m0-18v18"></path>
+    </symbol>
+    <symbol id="icon-layout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect><line x1="3" x2="21" y1="9" y2="9"></line><line x1="9" x2="9" y1="21" y2="9"></line>
+    </symbol>
+
+    <symbol id="icon-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline>
+    </symbol>
+    <symbol id="icon-database" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+      <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
+      <path d="M3 12A9 3 0 0 0 21 12"></path>
+    </symbol>
+    <symbol id="icon-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="20" height="8" x="2" y="2" rx="2" ry="2"></rect><rect width="20" height="8" x="2" y="14" rx="2" ry="2"></rect>
+      <line x1="6" x2="6.01" y1="6" y2="6"></line><line x1="6" x2="6.01" y1="18" y2="18"></line>
+    </symbol>
+    <symbol id="icon-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+    </symbol>
+    <symbol id="icon-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+      <polyline points="17 8 12 3 7 8"></polyline><line x1="12" x2="12" y1="3" y2="15"></line>
+    </symbol>
+    <symbol id="icon-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path>
+    </symbol>
+    <symbol id="icon-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.48 12H2"></path>
+    </symbol>
+    <symbol id="icon-chevron-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 9 12 15 18 9"></polyline>
+    </symbol>
+    <symbol id="icon-loader" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line>
+      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+      <line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line>
+      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+    </symbol>
+  </svg>
+
+  <script src="/compatibility-view.js?v=2.1.4"></script>
+  <script src="/app.js?v=2.1.4"></script>
+</body>
+</html>

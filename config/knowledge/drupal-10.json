@@ -1,0 +1,35 @@
+{
+  "targetVersion": "10",
+  "source": {
+    "major": 9,
+    "minimum": "9.4.0"
+  },
+  "target": {
+    "constraint": "^10",
+    "infoYml": "^9 || ^10"
+  },
+  "removedCoreExtensions": [
+    "aggregator",
+    "color",
+    "entity_reference",
+    "hal",
+    "quickedit",
+    "rdf"
+  ],
+  "patchSearchTerm": "search=Drupal%2010",
+  "defaultBranch": "upgrade/drupal-10",
+  "deprecationRules": [
+    {
+      "pattern": "\\bdrupal_set_message\\s*\\(",
+      "replacement": "\\Drupal::messenger()->addMessage("
+    },
+    {
+      "pattern": "\\bfile_create_url\\s*\\((.*?)\\)",
+      "replacement": "\\Drupal::service('file_url_generator')->generateAbsoluteString($1)"
+    },
+    {
+      "pattern": "\\\\?Drupal::entityManager\\s*\\(",
+      "replacement": "\\Drupal::entityTypeManager("
+    }
+  ]
+}

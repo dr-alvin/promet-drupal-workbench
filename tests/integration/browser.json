@@ -1,0 +1,86 @@
+{
+  "environment": {
+    "id": "fixture",
+    "kind": "local",
+    "authorized": true
+  },
+  "referenceUrl": "http://host.docker.internal:8765",
+  "testUrl": "http://host.docker.internal:8765",
+  "secretEnvironment": [
+    "AUDIT_SECRET_USER",
+    "AUDIT_SECRET_PASSWORD"
+  ],
+  "roles": {
+    "editor": {
+      "loginPath": "/login",
+      "successSelector": "#authenticated",
+      "usernameEnv": "AUDIT_SECRET_USER",
+      "passwordEnv": "AUDIT_SECRET_PASSWORD",
+      "submitSelector": "button"
+    }
+  },
+  "scenarios": [
+    {
+      "id": "public",
+      "label": "Public fixture",
+      "path": "/",
+      "expectedUrl": "/",
+      "role": "anonymous",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "requiredElements": [
+        "h1"
+      ],
+      "requiredText": [
+        "Fixture home"
+      ],
+      "ready": {
+        "selector": "h1",
+        "timeoutMs": 3000
+      }
+    },
+    {
+      "id": "editor",
+      "label": "Editor dialog",
+      "path": "/cms",
+      "expectedUrl": "/cms",
+      "role": "editor",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "requiredElements": [
+        "dialog[open]"
+      ],
+      "ready": {
+        "selector": "dialog[open]",
+        "timeoutMs": 3000
+      },
+      "interactions": [
+        {
+          "action": "click",
+          "selector": "#open"
+        },
+        {
+          "action": "fill",
+          "selector": "#title",
+          "value": "Preview fixture"
+        }
+      ],
+      "assertions": [
+        {
+          "action": "assertVisible",
+          "selector": "#close"
+        }
+      ],
+      "cleanup": [
+        {
+          "action": "click",
+          "selector": "#close"
+        }
+      ]
+    }
+  ]
+}

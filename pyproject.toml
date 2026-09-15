@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "d11"
+version = "2.0.0"
+description = "Promet Drupal 10-to-11 automated assessment, remediation, and safe execution toolkit"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PyYAML>=6.0.1",
+    "jsonschema>=4.20.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "httpx>=0.28.0",
+    "python-docx>=1.1.0",
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+d11 = "d11.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501", "UP017"]     # keep line length non-blocking until formatted, ignore dt.UTC upgrade on py39
+

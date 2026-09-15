@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0",
+  "name": "cautious",
+  "description": "Conservative estimation weights with higher contingency allocations",
+  "base": {
+    "low": 12.0,
+    "high": 18.0
+  },
+  "factors": {
+    "routinePackageUpdate": {
+      "low": 0.5,
+      "high": 1.0,
+      "label": "routine package updates"
+    },
+    "reviewedPatch": {
+      "low": 1.0,
+      "high": 2.0,
+      "label": "reviewed patch packages"
+    },
+    "manualOrAiRemediation": {
+      "low": 2.0,
+      "high": 4.0,
+      "label": "manual/AI remediations"
+    },
+    "removalPlan": {
+      "low": 1.5,
+      "high": 4.0,
+      "label": "removal plans"
+    }
+  },
+  "adjustments": {
+    "solverUnresolved": {
+      "low": 3.0,
+      "high": 6.0,
+      "description": "Composer resolution is unresolved: add 3–6 hours until the conflict set is bounded."
+    },
+    "baselineFailed": {
+      "low": 2.0,
+      "high": 3.0,
+      "description": "Page baseline failed: add 2–3 hours for route/readiness correction."
+    }
+  },
+  "assumptions": [
+    "Includes selected-page baseline/comparison, contrib/custom compatibility work, core dependency execution, technical QA and rollback handoff.",
+    "Excludes business UAT, external waiting, toolkit maintenance and uploaded-file inventory/content classification."
+  ]
+}

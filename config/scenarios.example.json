@@ -1,0 +1,325 @@
+{
+  "environment": {
+    "id": "client-local",
+    "kind": "local",
+    "authorized": false
+  },
+  "referenceUrl": "https://client.ddev.site",
+  "testUrl": "https://client.ddev.site",
+  "locale": "en-US",
+  "timezone": "UTC",
+  "roles": {
+    "editor": {
+      "loginPath": "/user/login",
+      "usernameSelector": "[name=\"name\"]",
+      "passwordSelector": "[name=\"pass\"]",
+      "submitSelector": "[data-drupal-selector=\"edit-submit\"]",
+      "successSelector": "#toolbar-administration",
+      "usernameEnv": "AUDIT_SECRET_EDITOR_USER",
+      "passwordEnv": "AUDIT_SECRET_EDITOR_PASSWORD"
+    }
+  },
+  "secretEnvironment": [
+    "AUDIT_SECRET_EDITOR_USER",
+    "AUDIT_SECRET_EDITOR_PASSWORD"
+  ],
+  "scenarios": [
+    {
+      "id": "home",
+      "label": "Homepage",
+      "path": "/",
+      "expectedUrl": "/",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "role": "anonymous",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1
+    },
+    {
+      "id": "search",
+      "label": "Search",
+      "path": "/search",
+      "expectedUrl": "/search",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "role": "anonymous",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1
+    },
+    {
+      "id": "mobile-navigation",
+      "label": "Mobile navigation",
+      "path": "/",
+      "expectedUrl": "/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "role": "anonymous",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1
+    },
+    {
+      "id": "content-add",
+      "label": "Content add / CKEditor",
+      "path": "/node/add/page",
+      "expectedUrl": "/node/add/page",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "role": "editor",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1,
+      "setup": [],
+      "interactions": [],
+      "assertions": [],
+      "cleanup": []
+    },
+    {
+      "id": "content-edit",
+      "label": "Content edit and preview",
+      "path": "/node/1/edit",
+      "expectedUrl": "/node/1/edit",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "role": "editor",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1,
+      "setup": [],
+      "interactions": [],
+      "assertions": [],
+      "cleanup": []
+    },
+    {
+      "id": "media",
+      "label": "Media selection/upload dialog",
+      "path": "/media/add",
+      "expectedUrl": "/media/add",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "role": "editor",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1,
+      "setup": [],
+      "interactions": [],
+      "assertions": [],
+      "cleanup": []
+    },
+    {
+      "id": "block",
+      "label": "Block placement",
+      "path": "/admin/structure/block",
+      "expectedUrl": "/admin/structure/block",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "role": "editor",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1,
+      "setup": [],
+      "interactions": [],
+      "assertions": [],
+      "cleanup": []
+    },
+    {
+      "id": "webform",
+      "label": "Webform creation and help",
+      "path": "/admin/structure/webform",
+      "expectedUrl": "/admin/structure/webform",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "role": "editor",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1,
+      "setup": [],
+      "interactions": [],
+      "assertions": [],
+      "cleanup": []
+    },
+    {
+      "id": "views-add",
+      "label": "Views add dialog",
+      "path": "/admin/structure/views/add",
+      "expectedUrl": "/admin/structure/views/add",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "role": "editor",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1,
+      "setup": [],
+      "interactions": [],
+      "assertions": [],
+      "cleanup": []
+    },
+    {
+      "id": "views-rearrange",
+      "label": "Views rearrange dialog",
+      "path": "/admin/structure/views",
+      "expectedUrl": "/admin/structure/views",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "role": "editor",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1,
+      "setup": [],
+      "interactions": [],
+      "assertions": [],
+      "cleanup": []
+    },
+    {
+      "id": "form-mode",
+      "label": "Form-mode chooser/add/edit",
+      "path": "/admin/structure/display-modes/form",
+      "expectedUrl": "/admin/structure/display-modes/form",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "role": "editor",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1,
+      "setup": [],
+      "interactions": [],
+      "assertions": [],
+      "cleanup": []
+    },
+    {
+      "id": "view-mode",
+      "label": "View-mode chooser/add/edit",
+      "path": "/admin/structure/display-modes/view",
+      "expectedUrl": "/admin/structure/display-modes/view",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "role": "editor",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1,
+      "setup": [],
+      "interactions": [],
+      "assertions": [],
+      "cleanup": []
+    },
+    {
+      "id": "permissions",
+      "label": "Role navigation and permissions",
+      "path": "/admin/people/permissions",
+      "expectedUrl": "/admin/people/permissions",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "role": "editor",
+      "requiredElements": [
+        "main"
+      ],
+      "ready": {
+        "selector": "main",
+        "timeoutMs": 15000
+      },
+      "threshold": 0.1,
+      "setup": [],
+      "interactions": [],
+      "assertions": [],
+      "cleanup": []
+    }
+  ],
+  "sitemap": {
+    "url": "https://client.ddev.site/sitemap.xml",
+    "hosts": [
+      "client.ddev.site"
+    ],
+    "maxMaps": 20,
+    "maxDepth": 3,
+    "limit": 100,
+    "timeoutMs": 10000
+  }
+}

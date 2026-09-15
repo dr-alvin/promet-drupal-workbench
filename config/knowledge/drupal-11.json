@@ -1,0 +1,90 @@
+{
+  "targetVersion": "11",
+  "source": {
+    "major": 10,
+    "minimum": "10.3.0"
+  },
+  "target": {
+    "constraint": "^11",
+    "infoYml": "^10 || ^11"
+  },
+  "removedCoreExtensions": [
+    "action",
+    "book",
+    "forum",
+    "statistics",
+    "tour",
+    "tracker"
+  ],
+  "patchSearchTerm": "search=Drupal%2011",
+  "defaultBranch": "upgrade/drupal-11",
+  "deprecationRules": [
+    {
+      "pattern": "FileSystemInterface::EXISTS_REPLACE",
+      "replacement": "\\Drupal\\Component\\Utility\\DeprecationHelper::backwardsCompatibleCall(\\Drupal::VERSION, '10.3.0', fn() => \\Drupal\\Core\\File\\FileExists::Replace, fn() => FileSystemInterface::EXISTS_REPLACE)"
+    },
+    {
+      "pattern": "FileSystemInterface::EXISTS_ERROR",
+      "replacement": "\\Drupal\\Component\\Utility\\DeprecationHelper::backwardsCompatibleCall(\\Drupal::VERSION, '10.3.0', fn() => \\Drupal\\Core\\File\\FileExists::Error, fn() => FileSystemInterface::EXISTS_ERROR)"
+    },
+    {
+      "pattern": "public\\s+static\\s+function\\s+getSubscribedEvents\\s*\\(\\s*\\)\\s*\\{",
+      "replacement": "public static function getSubscribedEvents(): array {"
+    },
+    {
+      "pattern": "public\\s+function\\s+validate\\s*\\(\\s*\\$entity\\s*,\\s*Constraint\\s+\\$constraint\\s*\\)\\s*\\{",
+      "replacement": "public function validate(mixed $entity, Constraint $constraint): void {"
+    },
+    {
+      "pattern": "#drupal-off-canvas",
+      "replacement": "#drupal-off-canvas, #drupal-off-canvas-wrapper",
+      "fileType": "css"
+    },
+    {
+      "pattern": "\\\\?Drupal::entityManager\\s*\\(\\s*\\)",
+      "replacement": "\\Drupal::entityTypeManager()"
+    },
+    {
+      "pattern": "\\bdrupal_set_message\\s*\\(",
+      "replacement": "\\Drupal::messenger()->addMessage("
+    },
+    {
+      "pattern": "\\bfile_create_url\\s*\\(",
+      "replacement": "\\Drupal::service('file_url_generator')->generateAbsoluteString("
+    },
+    {
+      "pattern": "\\bdb_query\\s*\\(",
+      "replacement": "\\Drupal::database()->query("
+    },
+    {
+      "pattern": "\\{%\\s*spaceless\\s*%\\}",
+      "replacement": "{% apply spaceless %}",
+      "fileType": "twig"
+    },
+    {
+      "pattern": "\\{%\\s*endspaceless\\s*%\\}",
+      "replacement": "{% endapply %}",
+      "fileType": "twig"
+    }
+  ],
+  "requirements": {
+    "php": ">=8.3.0",
+    "databases": {
+      "MariaDB": ">=10.6.0",
+      "MySQL": ">=8.0.0",
+      "PostgreSQL": ">=16.0.0"
+    },
+    "drush": ">=13.0.0"
+  },
+  "obsoleteModules": [
+    "advagg",
+    "advagg_mod",
+    "core_vendor_hardening"
+  ],
+  "removedCorePackages": [
+    "drupal/core-vendor-hardening"
+  ],
+  "replacements": {
+    "drupal/swiftmailer": "drupal/symfony_mailer"
+  }
+}

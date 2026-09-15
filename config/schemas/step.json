@@ -1,0 +1,129 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "stage": {
+      "enum": [
+        "A-baseline",
+        "B-readiness",
+        "C-remediation",
+        "D-composer",
+        "E-deployment",
+        "F-verification"
+      ]
+    },
+    "argv": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "cwd": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mutates": {
+      "type": "boolean"
+    },
+    "preparation": {
+      "type": "boolean"
+    },
+    "destructive": {
+      "type": "boolean"
+    },
+    "reviewedRemovalDigest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "newWorkaround": {
+      "type": "boolean"
+    },
+    "importsConfig": {
+      "type": "boolean"
+    },
+    "preconditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "stdoutEquals": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "argv"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "postconditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "stdoutEquals": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "argv"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "dependsOn": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "timeout": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "id",
+    "stage",
+    "argv",
+    "cwd",
+    "mutates",
+    "description"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

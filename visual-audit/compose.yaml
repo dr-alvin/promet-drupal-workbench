@@ -1,0 +1,17 @@
+services:
+  audit:
+    image: promet-d11-visual:1.0.0
+    build:
+      context: .
+    init: true
+    user: "${AUDIT_UID:-1000}:${AUDIT_GID:-1000}"
+    shm_size: 1gb
+    environment:
+      AUDIT_REFERENCE_URL: "${AUDIT_REFERENCE_URL:-}"
+      AUDIT_TEST_URL: "${AUDIT_TEST_URL:-}"
+      AUDIT_SELECT: "${AUDIT_SELECT:-}"
+    volumes:
+      - "${AUDIT_CONFIG_DIR:?config directory required}:/config:ro"
+      - "${AUDIT_OUTPUT:?output required}:/work"
+    tmpfs:
+      - /tmp:mode=1777

@@ -1,0 +1,446 @@
+{
+  "schemaVersion": "3.0",
+  "releaseGate": "green",
+  "releaseCandidateId": "release-11.0.0-rc1",
+  "run": {
+    "mode": "verify",
+    "sourceMajor": 10,
+    "targetMajor": 11,
+    "environment": "test",
+    "hosting": "acquia",
+    "mutationAllowed": false,
+    "approvalRequired": true
+  },
+  "phases": [
+    {
+      "id": "P1",
+      "name": "Audit, Infrastructure, and Drupal 10 Stabilization",
+      "goal": "Prove a stable supported source platform and recovery ownership.",
+      "entryCriteria": [
+        "Repository and lower-environment access are verified."
+      ],
+      "tasks": [
+        "Capture runtime, logs, status, database health, and backup ownership."
+      ],
+      "evidence": [
+        "00-baseline/infrastructure-report.json"
+      ],
+      "owner": "Platform team",
+      "risk": "low",
+      "estimateBand": "small",
+      "dependencies": [
+        "Approved lower environment"
+      ],
+      "acceptanceCriteria": [
+        "Platform and Drupal 10 baseline checks pass."
+      ],
+      "testingInstructions": [
+        "Run wrapper-based read-only status and requirements checks."
+      ],
+      "approvalState": "approved",
+      "exitCriteria": [
+        "Baseline evidence is complete and reviewed."
+      ],
+      "stopConditions": [
+        "Stop for unsupported runtime or missing recovery owner."
+      ],
+      "status": "green"
+    },
+    {
+      "id": "P2",
+      "name": "Composer, Contributed Extensions, and Patches",
+      "goal": "Resolve dependency and patch compatibility for Drupal 11.",
+      "entryCriteria": [
+        "Phase 1 is Green."
+      ],
+      "tasks": [
+        "Validate Composer blockers, contrib compatibility, removed extensions, and patches."
+      ],
+      "evidence": [
+        "01-upgrade-control/compatibility-matrix.json"
+      ],
+      "owner": "Drupal engineering",
+      "risk": "low",
+      "estimateBand": "medium",
+      "dependencies": [
+        "Stable Drupal 10 baseline"
+      ],
+      "acceptanceCriteria": [
+        "All dependencies and patches have reviewed dispositions."
+      ],
+      "testingInstructions": [
+        "Run Composer validation, why-not, and dry-run resolution."
+      ],
+      "approvalState": "approved",
+      "exitCriteria": [
+        "No unresolved dependency blocker remains."
+      ],
+      "stopConditions": [
+        "Stop for Red or unknown dependency posture."
+      ],
+      "status": "green"
+    },
+    {
+      "id": "P3",
+      "name": "Custom Code Remediation and API Adjustments",
+      "goal": "Prove custom extensions are compatible with Drupal 11.",
+      "entryCriteria": [
+        "Dependency targets are known."
+      ],
+      "tasks": [
+        "Run static analysis, Rector dry-run, code review, and custom regressions."
+      ],
+      "evidence": [
+        "02-static-analysis/phpstan-drupal-report.json"
+      ],
+      "owner": "Drupal engineering",
+      "risk": "low",
+      "estimateBand": "large",
+      "dependencies": [
+        "Compatible analysis tooling"
+      ],
+      "acceptanceCriteria": [
+        "No unresolved custom-code blocker remains."
+      ],
+      "testingInstructions": [
+        "Run automated and manual custom feature tests."
+      ],
+      "approvalState": "approved",
+      "exitCriteria": [
+        "Metadata changes are supported by test evidence."
+      ],
+      "stopConditions": [
+        "Stop for unreviewed automation or missing provider behavior."
+      ],
+      "status": "green"
+    },
+    {
+      "id": "P4",
+      "name": "Core Upgrade and Configuration Alignment",
+      "goal": "Upgrade and reconcile application state in an approved lower environment.",
+      "entryCriteria": [
+        "Approved manifest and matching recovery evidence exist."
+      ],
+      "tasks": [
+        "Resolve Drupal 11, run approved updates, and compare state."
+      ],
+      "evidence": [
+        "03-content-audit/post-upgrade-content-diff.json"
+      ],
+      "owner": "Release engineering",
+      "risk": "low",
+      "estimateBand": "medium",
+      "dependencies": [
+        "Phases 1 through 3 are Green"
+      ],
+      "acceptanceCriteria": [
+        "Core, configuration, schema, and content state reconcile."
+      ],
+      "testingInstructions": [
+        "Run the approved deployment sequence and semantic comparison."
+      ],
+      "approvalState": "approved",
+      "exitCriteria": [
+        "Drupal 11 requirements pass without unexplained drift."
+      ],
+      "stopConditions": [
+        "Stop on command failure, drift, or release mismatch."
+      ],
+      "status": "green"
+    },
+    {
+      "id": "P5",
+      "name": "Quality Assurance and Mandatory UAT",
+      "goal": "Prove technical quality and obtain business acceptance.",
+      "entryCriteria": [
+        "The release candidate is deployed to UAT."
+      ],
+      "tasks": [
+        "Run QA, editorial, integration, accessibility, visual, and UAT scenarios."
+      ],
+      "evidence": [
+        "04-qa-uat/uat-approval.json"
+      ],
+      "owner": "QA and business owner",
+      "risk": "low",
+      "estimateBand": "large",
+      "dependencies": [
+        "Stable release candidate"
+      ],
+      "acceptanceCriteria": [
+        "Critical tests pass and UAT approves the exact release."
+      ],
+      "testingInstructions": [
+        "Execute the catalog and record immutable evidence."
+      ],
+      "approvalState": "approved",
+      "exitCriteria": [
+        "UAT approval and defect disposition are recorded."
+      ],
+      "stopConditions": [
+        "Stop for failed critical tests, rejected UAT, or release mismatch."
+      ],
+      "status": "green"
+    },
+    {
+      "id": "P6",
+      "name": "Deployment Rehearsal and Production Handoff",
+      "goal": "Prove release and recovery procedures and prepare Production handoff.",
+      "entryCriteria": [
+        "Phases 1 through 5 are Green."
+      ],
+      "tasks": [
+        "Rehearse deployment, restore, monitoring, and decision procedures."
+      ],
+      "evidence": [
+        "05-release/final-signoff.json"
+      ],
+      "owner": "Release manager",
+      "risk": "low",
+      "estimateBand": "medium",
+      "dependencies": [
+        "Approved UAT for the release candidate"
+      ],
+      "acceptanceCriteria": [
+        "Deployment and rollback rehearsals pass and sign-off is complete."
+      ],
+      "testingInstructions": [
+        "Repeat the exact lower-environment release and recovery sequence."
+      ],
+      "approvalState": "approved for handoff",
+      "exitCriteria": [
+        "Production handoff packet is complete."
+      ],
+      "stopConditions": [
+        "Stop for failed rehearsal, missing backup, or missing sign-off."
+      ],
+      "status": "green"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-001",
+      "status": "green",
+      "summary": "All lifecycle controls pass.",
+      "owner": "Release manager",
+      "evidence": [
+        "phase-status.json"
+      ]
+    }
+  ],
+  "approval": {
+    "status": "approved",
+    "requestedScopes": [
+      "prepare"
+    ],
+    "approvedScopes": [
+      "prepare"
+    ],
+    "approvedBy": "Engineering approver",
+    "approvedAt": "2026-08-20T00:00:00Z",
+    "conditions": [],
+    "relatedStepManifest": "01-upgrade-control/approved-step-manifest.json"
+  },
+  "stepManifest": {
+    "environment": "test",
+    "releaseCandidateId": "release-11.0.0-rc1",
+    "approvedBy": "Engineering approver",
+    "backupEvidence": "05-release/rollback-rehearsal.json",
+    "rollbackPlan": "01-upgrade-control/backup-and-rollback-plan.md",
+    "steps": []
+  },
+  "uatApproval": {
+    "status": "approved",
+    "approvedBy": "Business owner",
+    "approvedAt": "2026-08-20T01:00:00Z",
+    "environment": "staging",
+    "testedReleaseId": "release-11.0.0-rc1",
+    "releaseCandidateId": "release-11.0.0-rc1",
+    "buildMatchesReleaseCandidate": true,
+    "acceptedScenarioIds": [
+      "UAT-001"
+    ],
+    "defectDisposition": "No unresolved release-blocking defects.",
+    "unresolvedDefects": []
+  },
+  "qaCatalog": [
+    {
+      "id": "QA-001",
+      "area": "runtime",
+      "title": "Critical runtime smoke",
+      "owner": "QA lead",
+      "criticality": "critical",
+      "environment": "test",
+      "preconditions": [
+        "Release candidate deployed"
+      ],
+      "steps": [
+        "Open the critical route"
+      ],
+      "expectedResult": "The route responds without fatal output.",
+      "evidence": "evidence/qa-001",
+      "automationType": "http",
+      "extensions": []
+    }
+  ],
+  "qaResults": [
+    {
+      "id": "QA-001",
+      "status": "passed",
+      "evidence": "evidence/qa-001",
+      "defectIds": [],
+      "executedAt": "2026-08-20T00:30:00Z"
+    }
+  ],
+  "smokeTests": {
+    "status": "passed",
+    "releaseCandidateId": "release-11.0.0-rc1",
+    "summary": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0
+    },
+    "results": [
+      {
+        "id": "HTTP-001",
+        "passed": true
+      }
+    ]
+  },
+  "phpunit": {
+    "status": "passed",
+    "releaseCandidateId": "release-11.0.0-rc1",
+    "summary": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "suites": [
+      {
+        "name": "fixture",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ]
+  },
+  "uatResults": {
+    "releaseCandidateId": "release-11.0.0-rc1",
+    "environment": "staging",
+    "results": [
+      {
+        "id": "UAT-001",
+        "status": "passed",
+        "evidence": "evidence/uat-001",
+        "defectIds": []
+      }
+    ]
+  },
+  "deploymentRehearsal": {
+    "releaseCandidateId": "release-11.0.0-rc1",
+    "status": "passed",
+    "environment": "test",
+    "owner": "Release engineer",
+    "evidence": "evidence/deployment-task-1001"
+  },
+  "rollbackRehearsal": {
+    "releaseCandidateId": "release-11.0.0-rc1",
+    "status": "passed",
+    "environment": "test",
+    "owner": "Platform engineer",
+    "evidence": "evidence/restore-task-1002"
+  },
+  "finalSignoff": {
+    "status": "approved",
+    "releaseCandidateId": "release-11.0.0-rc1",
+    "signers": [
+      "Engineering approver",
+      "QA lead",
+      "Business owner",
+      "Platform owner",
+      "Release manager"
+    ]
+  },
+  "uatPlan": "# UAT Plan\n\nTest the immutable release candidate in Staging using approved business scenarios and record defects before sign-off.",
+  "uatScenarios": [
+    {
+      "id": "UAT-001",
+      "title": "Critical editorial journey",
+      "business_owner": "Business owner",
+      "criticality": "critical",
+      "preconditions": "Approved synthetic content exists.",
+      "steps": "Complete the documented editorial journey.",
+      "expected_result": "The journey completes without regression.",
+      "evidence": "evidence/uat-001"
+    }
+  ],
+  "backupRollbackPlan": "# Backup and Rollback Plan\n\nRestore the matching code, database, and files release using the rehearsed provider procedure.",
+  "monitoringPlan": "# Monitoring Plan\n\nMonitor application errors, performance, queues, cron, integrations, and user reports during the approved observation window.",
+  "customExtensions": [],
+  "infrastructure": {
+    "status": "green",
+    "evidence": [
+      "phase-status.json"
+    ],
+    "fixture": true
+  },
+  "logReview": {
+    "status": "green",
+    "evidence": [
+      "phase-status.json"
+    ],
+    "fixture": true
+  },
+  "databaseHealth": {
+    "status": "green",
+    "evidence": [
+      "phase-status.json"
+    ],
+    "fixture": true
+  },
+  "compatibility": {
+    "status": "green",
+    "evidence": [
+      "phase-status.json"
+    ],
+    "fixture": true
+  },
+  "patches": {
+    "status": "green",
+    "evidence": [
+      "phase-status.json"
+    ],
+    "fixture": true
+  },
+  "phpstan": {
+    "tool": "phpstan-drupal",
+    "status": "green",
+    "summary": {
+      "errorCount": 0
+    },
+    "findings": [],
+    "fixture": true
+  },
+  "rector": {
+    "tool": "drupal-rector",
+    "status": "green",
+    "summary": {
+      "manualReviewRequired": true,
+      "manualReviewComplete": true
+    },
+    "files": [],
+    "fixture": true
+  },
+  "contentDiff": {
+    "status": "ok",
+    "checks": {
+      "configurationUuidPreserved": true,
+      "entityRevisionDriftDetected": false,
+      "fieldStorageDriftDetected": false
+    },
+    "changes": [],
+    "fixture": true
+  }
+}

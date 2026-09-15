@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+TOOL_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON="${D11_PYTHON:-$TOOL_ROOT/.venv/bin/python}"
+if [[ ! -x "$PYTHON" ]]; then echo 'Set up the toolkit Python environment first (see README).' >&2; exit 3; fi
+exec "$PYTHON" "$TOOL_ROOT/scripts/visual_audit.py" "$@"

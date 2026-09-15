@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0",
+  "name": "default",
+  "description": "Standard Promet Drupal 10-to-11 heuristic estimation weights",
+  "base": {
+    "low": 8.0,
+    "high": 12.0
+  },
+  "factors": {
+    "routinePackageUpdate": {
+      "low": 0.25,
+      "high": 0.75,
+      "label": "routine package updates"
+    },
+    "reviewedPatch": {
+      "low": 0.75,
+      "high": 1.5,
+      "label": "reviewed patch packages"
+    },
+    "manualOrAiRemediation": {
+      "low": 1.5,
+      "high": 3.0,
+      "label": "manual/AI remediations"
+    },
+    "removalPlan": {
+      "low": 1.0,
+      "high": 3.0,
+      "label": "removal plans"
+    }
+  },
+  "adjustments": {
+    "solverUnresolved": {
+      "low": 2.0,
+      "high": 4.0,
+      "description": "Composer resolution is unresolved: add 2–4 hours until the conflict set is bounded."
+    },
+    "baselineFailed": {
+      "low": 1.0,
+      "high": 2.0,
+      "description": "Page baseline failed: add 1–2 hours for route/readiness correction."
+    }
+  },
+  "assumptions": [
+    "Includes selected-page baseline/comparison, contrib/custom compatibility work, core dependency execution, technical QA and rollback handoff.",
+    "Excludes business UAT, external waiting, toolkit maintenance and uploaded-file inventory/content classification."
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "sourceSkill": "drupal-11-upgrade-readiness",
+  "inspectedAt": "2026-09-08",
+  "files": [
+    {
+      "file": "scripts/inherited/aggregate_phpunit_results.py",
+      "sourceRelativePath": "scripts/aggregate_phpunit_results.py",
+      "sourceSha256": "39ade1727991a5c20892d2521bbb3ca585121c5524e64036da4fc32cc5f7b372",
+      "localSha256": "39ade1727991a5c20892d2521bbb3ca585121c5524e64036da4fc32cc5f7b372",
+      "modified": false
+    },
+    {
+      "file": "scripts/inherited/compare_content_audit.py",
+      "sourceRelativePath": "scripts/compare_content_audit.py",
+      "sourceSha256": "fde81369ebdc89b6f4914dcba9047aee95345b853fd8466102212094f1f39cc8",
+      "localSha256": "fde81369ebdc89b6f4914dcba9047aee95345b853fd8466102212094f1f39cc8",
+      "modified": false
+    },
+    {
+      "file": "scripts/inherited/generate_audience_reports.py",
+      "sourceRelativePath": "scripts/generate_audience_reports.py",
+      "sourceSha256": "f6025d7a8844f64537fdb3d5981cfa0f1432bd33949f47b488a81fbd1329cd86",
+      "localSha256": "6d00f361a66319c19a42c6ddc5094b2f0f1aa76b1a02591cf7e0e7bf985088fe",
+      "modified": true
+    },
+    {
+      "file": "scripts/inherited/generate_lifecycle_packet.py",
+      "sourceRelativePath": "scripts/generate_lifecycle_packet.py",
+      "sourceSha256": "d672e710a7973d93aff529f78c975d74b3f7a7f2f9178aacaf3811554eb9a4db",
+      "localSha256": "2c1b2745941971f480292e2c610a235e92c2d3e3263b0f270fa8d9d4721d8c97",
+      "modified": true
+    },
+    {
+      "file": "scripts/inherited/validate_upgrade_artifacts.py",
+      "sourceRelativePath": "scripts/validate_upgrade_artifacts.py",
+      "sourceSha256": "ff199d506c1d237689c15dc74551505b52c3f617a57491d3e10bb96dbb966eee",
+      "localSha256": "ff199d506c1d237689c15dc74551505b52c3f617a57491d3e10bb96dbb966eee",
+      "modified": false
+    }
+  ]
+}

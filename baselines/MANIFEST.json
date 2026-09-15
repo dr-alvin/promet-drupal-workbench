@@ -1,0 +1,16 @@
+{
+  "projectId": "prometweb-upgrade-test",
+  "runId": "5cadfe8ebd694ee5a8b44eca69cb27b6",
+  "sourceCommitSha": "f75c9e223a11edba9331bb21f0dd063c871871f6",
+  "toolkitGitSha": "c077200cb34151a01e726f2a2d10446a817621bd",
+  "recordedAt": "2026-09-11T03:19:49.259149+00:00",
+  "baselineDir": "baselines/golden-run-pre-refactor",
+  "verifiedFiles": [
+    "result/result.json",
+    "plan.json",
+    "compatibility-report.json",
+    "audit-tools.json",
+    "result/context.json",
+    "gate.json"
+  ]
+}

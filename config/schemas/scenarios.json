@@ -1,0 +1,372 @@
+{
+  "type": "object",
+  "properties": {
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "critical": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "referenceUrl": {
+            "type": "string",
+            "minLength": 1
+          },
+          "testUrl": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedUrl": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "test": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "reference",
+                  "test"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "viewport": {
+            "type": "object",
+            "properties": {
+              "width": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "additionalProperties": false
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requiredElements": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "requiredText": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "ready": {
+            "type": "object",
+            "properties": {
+              "requiredImages": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "selector": {
+                "type": "string",
+                "minLength": 1
+              },
+              "timeoutMs": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "scroll": {
+                "type": "object",
+                "properties": {
+                  "iterations": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maxDistance": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "timeoutMs": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "selector"
+            ],
+            "additionalProperties": false
+          },
+          "threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "setup": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "enum": [
+                    "click",
+                    "fill",
+                    "select",
+                    "press",
+                    "check",
+                    "wait",
+                    "assertVisible",
+                    "assertText",
+                    "upload"
+                  ]
+                },
+                "selector": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "action",
+                "selector"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "interactions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "enum": [
+                    "click",
+                    "fill",
+                    "select",
+                    "press",
+                    "check",
+                    "wait",
+                    "assertVisible",
+                    "assertText",
+                    "upload"
+                  ]
+                },
+                "selector": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "action",
+                "selector"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "assertions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "enum": [
+                    "click",
+                    "fill",
+                    "select",
+                    "press",
+                    "check",
+                    "wait",
+                    "assertVisible",
+                    "assertText",
+                    "upload"
+                  ]
+                },
+                "selector": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "action",
+                "selector"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "cleanup": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "enum": [
+                    "click",
+                    "fill",
+                    "select",
+                    "press",
+                    "check",
+                    "wait",
+                    "assertVisible",
+                    "assertText",
+                    "upload"
+                  ]
+                },
+                "selector": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "action",
+                "selector"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "masks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "selector": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "selector",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "mutates": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "viewport",
+          "expectedUrl",
+          "requiredElements",
+          "ready"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "local",
+            "dev",
+            "test",
+            "multidev",
+            "production"
+          ]
+        },
+        "authorized": {
+          "type": "boolean"
+        },
+        "disposable": {
+          "type": "boolean"
+        },
+        "allowFixtureMutation": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "authorized"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "scenarios",
+    "environment"
+  ],
+  "additionalProperties": true,
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

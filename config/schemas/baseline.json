@@ -1,0 +1,93 @@
+{
+  "type": "object",
+  "properties": {
+    "environment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "local",
+            "dev",
+            "test",
+            "multidev",
+            "production"
+          ]
+        },
+        "authorized": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "authorized"
+      ],
+      "additionalProperties": false
+    },
+    "site": {
+      "type": "object",
+      "properties": {
+        "uri": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "additionalProperties": false
+    },
+    "codeRevision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "installedExtensions": {
+      "type": "string",
+      "minLength": 1
+    },
+    "activeConfiguration": {
+      "type": "string",
+      "minLength": 1
+    },
+    "publicScenarios": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "authenticatedScenarios": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "captureSettings": {
+      "type": "string",
+      "minLength": 1
+    },
+    "captureSettingsHash": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "environment",
+    "site",
+    "codeRevision",
+    "installedExtensions",
+    "activeConfiguration",
+    "publicScenarios",
+    "authenticatedScenarios",
+    "captureSettings",
+    "captureSettingsHash"
+  ],
+  "additionalProperties": true,
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

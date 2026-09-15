@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "repository": "../../client-site",
+  "environment": {"id": "client-local", "kind": "local", "authorized": false},
+  "site": {"uri": "https://client.ddev.site"},
+  "roots": {"composer": ".", "drupal": "web", "config": "config/sync", "custom": ["web/modules/custom", "web/themes/custom"]},
+  "runtime": {"wrapper": "ddev"},
+  "proposedChanges": [],
+  "steps": [],
+  "checks": [],
+  "estimates": []
+}

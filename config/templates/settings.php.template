@@ -1,0 +1,6 @@
+<?php
+$databases['default']['default']=['driver'=>'mysql','namespace'=>'Drupal\\mysql\\Driver\\Database\\mysql','autoload'=>'core/modules/mysql/src/Driver/Database/mysql/','database'=>getenv('MYSQL_DATABASE'),'username'=>getenv('MYSQL_USER'),'password'=>getenv('MYSQL_PASSWORD'),'host'=>'db','port'=>3306];
+$settings['hash_salt']='{{HASH_SALT}}';
+$settings['trusted_host_patterns']=['^127\.0\.0\.1$','^{{PROJECT}}$'];
+$settings['config_sync_directory']='/var/www/{{CONFIG_SYNC_DIRECTORY}}';
+{{CONFIG_OVERRIDES}}

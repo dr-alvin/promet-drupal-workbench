@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+TOOL_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="$TOOL_ROOT/src:${PYTHONPATH:-}"
+VENV="$TOOL_ROOT/.venv"
+REQUIREMENTS="$TOOL_ROOT/requirements.txt"
+PYTHON="${D11_PYTHON:-$VENV/bin/python}"
+BOOTSTRAP_PYTHON="${D11_BOOTSTRAP_PYTHON:-python3}"
+REQUIREMENTS_MARKER="$VENV/.d11-requirements.sha256"
+
+requirements_hash() {
+  "$PYTHON" -c 'import hashlib,pathlib,sys;print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$REQUIREMENTS"
+}
+
+environment_ready() {
+  "$PYTHON" -c 'import docx,fastapi,httpx,jsonschema,uvicorn,yaml' >/dev/null 2>&1
+}
+
+bootstrap() {
+  if [[ -n "${D11_PYTHON:-}" ]]; then
+    if [[ ! -x "$PYTHON" ]]; then
+      echo "D11_PYTHON is not executable: $PYTHON" >&2
+      exit 3
+    fi
+    return
+  fi
+
+  if [[ ! -x "$PYTHON" ]]; then
+    if ! command -v "$BOOTSTRAP_PYTHON" >/dev/null 2>&1; then
+      echo "Python 3 is required to create the toolkit environment." >&2
+      exit 3
+    fi
+    echo "Creating toolkit Python environment at $VENV ..."
+    "$BOOTSTRAP_PYTHON" -m venv "$VENV"
+  fi
+
+  if [[ -f "$REQUIREMENTS_MARKER" && "$REQUIREMENTS" -ot "$REQUIREMENTS_MARKER" && -x "$PYTHON" ]]; then
+    return
+  fi
+
+  local expected installed=""
+  expected="$(requirements_hash)"
+  if [[ -f "$REQUIREMENTS_MARKER" ]]; then installed="$(cat "$REQUIREMENTS_MARKER")"; fi
+  if [[ "$installed" != "$expected" ]] || ! environment_ready; then
+    echo "Installing toolkit Python dependencies ..."
+    "$VENV/bin/pip" install --disable-pip-version-check -r "$REQUIREMENTS"
+    printf '%s\n' "$expected" > "$REQUIREMENTS_MARKER"
+  fi
+}
+
+bootstrap
+if [[ "${1:-}" == "setup" ]]; then
+  echo "Toolkit Python environment is ready: $PYTHON"
+  exit 0
+fi
+exec "$PYTHON" -m d11.cli "$@"

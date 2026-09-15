@@ -1,0 +1,3 @@
+'use strict';
+const {chromium}=require('playwright');
+(async()=>{const [url,identity]=process.argv.slice(2);const browser=await chromium.launch({headless:true,args:['--no-sandbox']});try{const page=await browser.newPage();const response=await page.goto(url,{waitUntil:'commit',timeout:15000});if(!response||response.status()!==200||response.headers()['x-d11-identity']!==identity)throw Error('Browser route does not match isolated runtime identity');console.log(JSON.stringify({status:response.status(),url:response.url(),identityVerified:true}));}finally{await browser.close();}})().catch(e=>{console.error(e.message);process.exit(1)});

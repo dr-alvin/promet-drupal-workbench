@@ -1,0 +1,7 @@
+interface:
+  display_name: "Promet Drupal 11 Hybrid Upgrade"
+  short_description: "Audit, approve, upgrade, verify, and roll back"
+  brand_color: "#19675D"
+  default_prompt: "Use $promet-drupal11-hybrid-upgrade to audit this local Drupal 10 project and guide the exact approved Drupal 11 upgrade on a managed copy."
+policy:
+  allow_implicit_invocation: true
