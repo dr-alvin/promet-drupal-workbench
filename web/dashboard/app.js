@@ -3539,6 +3539,7 @@ window.openUpgradeConfirmModal = openUpgradeConfirmModal;
   if($('report-meta'))$('report-meta').textContent+=' · '+(result.sourceChanged?'Inputs changed':'Inputs match');
  });
  if($('refresh-dashboard'))$('refresh-dashboard').onclick=()=>{report=null;refresh().catch(error);};
+  if($('rollback-standby-upgrade-btn'))$('rollback-standby-upgrade-btn').onclick=()=>showStage('upgrade',true);
 
  document.addEventListener('visibilitychange',()=>{
   clearTimeout(pollTimer);pollTimer=null;

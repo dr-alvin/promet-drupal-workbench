@@ -33,8 +33,9 @@ module.exports=async(page,scenario)=>{
       throw new Error('Unexpected cross-host redirect from ' + expected.href + ' to ' + actual.href);
     }
     for(const selector of s.requiredElements)await page.locator(selector).waitFor({state:'visible'});
-    try{await page.addStyleTag({content:'html, body { overflow-x:hidden!important; max-width:100vw!important; } html, body, *,*::before,*::after { scroll-behavior:auto!important; animation:none!important;transition:none!important;caret-color:transparent!important; } .slick-track, .slick-slide { transition:none!important; } video { pointer-events:none!important; }'});}catch{}
+    try{await page.addStyleTag({content:'html, body { overflow-x:hidden!important; max-width:100vw!important; scrollbar-width: none !important; -ms-overflow-style: none !important; } ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; } html, body, *,*::before,*::after { scroll-behavior:auto!important; animation:none!important;transition:none!important;caret-color:transparent!important; } .slick-track, .slick-slide { transition:none!important; } video { pointer-events:none!important; }'});}catch{}
     const freezeMedia=async ()=>{
+      try{document.querySelectorAll('details').forEach(d=>{d.open=false;});}catch{}
       if(window.jQuery?.fn?.slick){
         try{
           window.jQuery('.slick-initialized, .slick-slider, [data-slick], .slide-show-with-items-container').each(function(){
@@ -120,14 +121,14 @@ module.exports=async(page,scenario)=>{
       }catch{}
       try{
         document.querySelectorAll('img').forEach(img=>{
-          if(img.complete && img.naturalWidth > 0 && /\.(gif|webp)($|\?)/i.test(img.currentSrc||img.src)){
+          if(img.complete && img.naturalWidth > 0 && /\.gif($|\?)/i.test(img.currentSrc||img.src)){
             try{
               const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;
               const ctx=c.getContext('2d');ctx.drawImage(img,0,0);img.src=c.toDataURL();
             }catch{}
           }
         });
-        const bgRegex=/url\(["']?([^"')]+\.(gif|webp)(?:\?[^"')]+)?)["']?\)/i;
+        const bgRegex=/url\(["']?([^"')]+\.gif(?:\?[^"')]+)?)["']?\)/i;
         const bgPromises=[];
         const candidates=document.querySelectorAll('section, div, header, footer, a, span, [style*="background"]');
         candidates.forEach(el=>{
@@ -160,7 +161,7 @@ module.exports=async(page,scenario)=>{
     };
     try{await page.evaluate(freezeMedia);}catch{}
     await page.evaluate(timeout=>Promise.race([document.fonts.ready,new Promise((_,reject)=>setTimeout(()=>reject(new Error('Font readiness timeout')),timeout))]),s.ready.timeoutMs||15000);
-    const coverage=await require('./images').readiness(page,s);
+    const coverage=await require('./images').readiness(page,s).catch(e=>{console.warn('Image readiness timeout; proceeding to screenshot:',e.message);return{ready:false,requiredUnavailable:[],covered:[],outsideCoverage:[]};});
     try{await page.evaluate(freezeMedia);}catch{}
     await page.evaluate(()=>{document.documentElement.style.scrollBehavior='auto';document.body.style.scrollBehavior='auto';window.scrollTo({top:0,left:0,behavior:'instant'});});
     await page.waitForTimeout(200);

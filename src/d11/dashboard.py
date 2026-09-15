@@ -69,6 +69,12 @@ def create_app(home=None, port=8765):
             ROOT / "web/dashboard/compatibility-view.js", media_type="application/javascript"
         )
 
+    @app.get("/theme-init.js")
+    def theme_init_js():
+        return FileResponse(
+            ROOT / "web/dashboard/theme-init.js", media_type="application/javascript"
+        )
+
     @app.get("/style.css")
     def css():
         return FileResponse(ROOT / "web/dashboard/style.css", media_type="text/css")

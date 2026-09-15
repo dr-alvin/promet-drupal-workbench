@@ -747,6 +747,16 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertIn('id="icon-sprite"', r.text)
 
+    def test_dashboard_no_inline_scripts_or_onclick(self):
+        client = TestClient(create_app(self.home), base_url="http://127.0.0.1:8765")
+        r = client.get("/")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn("<script>", r.text)
+        self.assertNotIn("onclick=", r.text)
+        r_theme = client.get("/theme-init.js")
+        self.assertEqual(r_theme.status_code, 200)
+        self.assertIn("application/javascript", r_theme.headers.get("content-type", ""))
+
     def test_project_activity_endpoint(self):
         self.register()
         client = TestClient(create_app(self.home), base_url="http://127.0.0.1:8765")

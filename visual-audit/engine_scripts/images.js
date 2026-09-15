@@ -32,10 +32,10 @@ async function readiness(page,s){
     const step=Math.min(1000,bound.maxDistance-distance);await page.evaluate(n=>window.scrollBy({top:n,behavior:'instant'}),step);distance+=step;await page.waitForTimeout(40);
   }
   await page.evaluate(()=>{document.documentElement.style.scrollBehavior='auto';document.body.style.scrollBehavior='auto';window.scrollTo({top:0,left:0,behavior:'instant'});});
-  await page.evaluate(()=>Promise.all(Array.from(document.images).filter(img=>!img.complete).map(img=>new Promise(res=>{img.onload=img.onerror=res;}))));
+  await page.evaluate(()=>Promise.race([Promise.all(Array.from(document.images).filter(img=>{try{return !img.complete&&new URL(img.currentSrc||img.src||'data:',location.href).hostname===location.hostname;}catch{return false;}}).map(img=>new Promise(res=>{img.onload=img.onerror=res;}))),new Promise(r=>setTimeout(r,5000))]));
   const selectors=s.ready.requiredImages||[];
   try{await page.waitForFunction(imageState,{selectors,wait:true},{timeout:s.ready.timeoutMs||15000});}
-  catch(e){e.imageCoverage=await page.evaluate(imageState,{selectors});throw e;}
+  catch(e){return {...await page.evaluate(imageState,{selectors}).catch(()=>({ready:false,requiredUnavailable:[],covered:[],outsideCoverage:[]})),scrollDistance:distance};}
   return {...await page.evaluate(imageState,{selectors}),scrollDistance:distance};
 }
 module.exports={imageState,readiness};

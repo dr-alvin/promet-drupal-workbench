@@ -156,6 +156,12 @@ When modifying or running the toolkit:
    - Contrib modules already adhere to Drupal.org community standards and their D11 versions are resolved by Composer.
    - Deep PHPStan and Rector scanning strictly focuses on **custom code** (`modules/custom`, `themes/custom`) and **remediations/patches** (`ai_manual_patch`, `manual_remediation`, community MRs).
    - Contrib PHPStan is skipped via `--ignore-contrib` to avoid redundant multi-minute scans on obsolete D10 contrib files.
+6. **Localhost & Local Dev Environment Executions (Docksal, Lando, DDEV, Loopback)**:
+   - For local probes, health checks, or API requests targeting `localhost`, `127.0.0.1` (on any port), Docksal (`*.docksal.site`, `*.docksal`), Lando (`*.lndo.site`, `*.lando.site`), or DDEV (`*.ddev.site`), agents must run `curl` inside the standard sandbox (`BypassSandbox: false`) directly without asking for manual permission or bypass, as local dev and loopback traffic executes automatically without prompting.
+   - Standard environment CLI commands (`fin`, `lando`, `ddev`, `docker`) should also be run sandboxed first without prompting for manual confirmation.
+7. **Read-Only Metadata & Inspection Scripts (`~/.d11`, JSON, Python)**:
+   - Reading configuration files, manifests, or visual diff metadata in `~/.d11` is strictly read-only and safe.
+   - Agents must run inspection scripts (`python3`, `jq`, `cat`) inside the standard sandbox (`BypassSandbox: false`) or use native `view_file` tools, never requesting sandbox bypass for reading project metadata.
 
 ---
 

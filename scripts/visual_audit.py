@@ -204,7 +204,7 @@ def main():
             "AUDIT_REFERENCE_URL": a.reference_url or cfg.get("referenceUrl", ""),
             "AUDIT_TEST_URL": a.test_url or cfg.get("testUrl", ""),
             "AUDIT_SELECT": a.select or "",
-            "AUDIT_ASYNC_CAPTURE_LIMIT": os.environ.get("AUDIT_ASYNC_CAPTURE_LIMIT", "5"),
+            "AUDIT_ASYNC_CAPTURE_LIMIT": os.environ.get("AUDIT_ASYNC_CAPTURE_LIMIT", "1"),
             "AUDIT_ASYNC_COMPARE_LIMIT": os.environ.get("AUDIT_ASYNC_COMPARE_LIMIT", "4"),
         }.items():
             env[key] = val

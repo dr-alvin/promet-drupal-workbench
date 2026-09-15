@@ -7,16 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="alternate icon" type="image/x-icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/favicon.png">
-  <script>
-    (function() {
-      try {
-        var saved = localStorage.getItem('d11-theme') || 'system';
-        var isDark = saved === 'dark' || (saved === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-        document.documentElement.setAttribute('data-theme-mode', saved);
-      } catch(e) {}
-    })();
-  </script>
+  <script src="/theme-init.js?v=2.1.4"></script>
   <link rel="stylesheet" href="/style.css?v=2.1.4">
 </head>
 <body>
@@ -872,7 +863,7 @@
               <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.5;margin:0 0 16px;">
                 No upgrade run has been executed yet. Instant 1-Click Rollback activates automatically after you perform <strong>Stage 03 (Upgrade)</strong>, allowing you to revert code and database back to the pre-upgrade backup.
               </p>
-              <button class="secondary" type="button" onclick="showStage('upgrade', true)" style="font-size:13px;padding:7px 14px;">
+              <button class="secondary" type="button" id="rollback-standby-upgrade-btn" style="font-size:13px;padding:7px 14px;">
                 Go to Stage 03 Upgrade →
               </button>
             </div>
@@ -1472,10 +1463,10 @@
                 <span class="guide-context-url muted" id="guide-ctx-url"></span>
               </div>
               <div class="guide-context-controls">
-                <button type="button" class="btn btn-sm btn-ghost active" id="guide-mode-active-btn" onclick="setGuidePathMode('active')" title="Format commands using the active project's exact local path and URL">
+                <button type="button" class="btn btn-sm btn-ghost active" id="guide-mode-active-btn" title="Format commands using the active project's exact local path and URL">
                   <svg class="ui-icon" aria-hidden="true"><use href="#icon-check-circle"></use></svg> <span>Project-Specific</span>
                 </button>
-                <button type="button" class="btn btn-sm btn-ghost" id="guide-mode-portable-btn" onclick="setGuidePathMode('portable')" title="Format commands using portable placeholders">
+                <button type="button" class="btn btn-sm btn-ghost" id="guide-mode-portable-btn" title="Format commands using portable placeholders">
                   <svg class="ui-icon" aria-hidden="true"><use href="#icon-file"></use></svg> <span>Portable / Relative</span>
                 </button>
               </div>

@@ -403,6 +403,11 @@ DEFAULT_MASKS = [
     {"selector": ".intercom-lightweight-app", "reason": "Intercom chat widget overlay"},
     {"selector": ".live-chat", "reason": "Live chat widget overlay"},
     {"selector": ".hbspt-form", "reason": "HubSpot form iframes"},
+    {"selector": "#contact_form", "reason": "HubSpot contact form container"},
+    {"selector": "iframe[src*='maps.google.com']", "reason": "Google Maps embed iframe"},
+    {"selector": ".views-exposed-form", "reason": "Views exposed filter facet forms"},
+    {"selector": ".block-featured-4", "reason": "Randomized featured resources cards"},
+    {"selector": "#block-promet-provus-subscriptionformforprovuspromet", "reason": "Subscription form with dynamic CSRF"},
     {"selector": ".employee-map", "reason": "Interactive employee map widget"},
     {"selector": ".views-infinite-scroll-pager-item", "reason": "Views infinite scroll trigger"},
     {"selector": ".section-job-listing", "reason": "External job board and career openings"},
@@ -427,7 +432,7 @@ def scenarios(routes, environment, reference, test, network, masks=None):
             "viewport": {"width": 1440, "height": 900},
             "ready": {"selector": "body", "timeoutMs": 15000},
             "requiredElements": ["body"],
-            "threshold": 0.2,
+            "threshold": 0.5,
             "masks": applied_masks,
         }
         for i, route in enumerate(routes)

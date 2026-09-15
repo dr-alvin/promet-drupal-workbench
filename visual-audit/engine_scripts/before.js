@@ -24,6 +24,18 @@ module.exports=async(page,scenario)=>{
   page.setDefaultTimeout(s.ready.timeoutMs||15000);
   page.setDefaultNavigationTimeout(config.navigationTimeoutMs||60000);
   try { await page.emulateMedia({ reducedMotion: 'reduce' }); } catch {}
+  await page.addInitScript(() => {
+    const inject = () => {
+      if (document.documentElement && !document.getElementById('__audit_scrollbar_style')) {
+        const el = document.createElement('style');
+        el.id = '__audit_scrollbar_style';
+        el.textContent = 'html, body { overflow-x: hidden !important; max-width: 100vw !important; scrollbar-width: none !important; -ms-overflow-style: none !important; } ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }';
+        (document.head || document.documentElement).appendChild(el);
+      }
+    };
+    if (document.documentElement) inject();
+    else document.addEventListener('DOMContentLoaded', inject);
+  });
   await page.setExtraHTTPHeaders({'Accept-Language':config.locale||'en-US'});
   // Backstop creates the browser context. CDP overrides retain the same context and cookies.
   const cdp=await page.context().newCDPSession(page);
