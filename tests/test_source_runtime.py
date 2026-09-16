@@ -175,7 +175,7 @@ class SourceTests(unittest.TestCase):
                             d["site"] = "sites/another"
                         return json.dumps(d)
                     if problem == "database" and "SELECT VERSION()" in " ".join(argv):
-                        return "5.7.44-MySQL"
+                        return "5.5.44-MySQL"
                     return v
 
                 with (

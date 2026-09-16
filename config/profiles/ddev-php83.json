@@ -13,7 +13,7 @@
       "MariaDB",
       "MySQL"
     ],
-    "supportedPattern": "^(?:10\\.(?:[3-9]|10|11)|11\\.|8\\.[0-9]+)"
+    "supportedPattern": "^(?:5\\.7|10\\.(?:[3-9]|10|11)|11\\.|8\\.[0-9]+)"
   },
   "images": {
     "cli": "ddev/ddev-webserver:v1.23.0",

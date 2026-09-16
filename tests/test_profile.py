@@ -83,10 +83,10 @@ class ProfileTests(unittest.TestCase):
         validate_profile_database(p83, "8.0.35-Percona Server")
         validate_profile_database(p83, "8.4.0")
 
-        # Unsupported MySQL version (5.7 is unsupported by Drupal 11)
+        # Unsupported MySQL version (5.5 is unsupported)
         with self.assertRaises(Problem) as ctx:
-            validate_profile_database(p83, "5.7.44-MySQL")
-        self.assertIn("Source database version is unsupported by the managed destination: 5.7.44-MySQL", str(ctx.exception))
+            validate_profile_database(p83, "5.5.44-MySQL")
+        self.assertIn("Source database version is unsupported by the managed destination: 5.5.44-MySQL", str(ctx.exception))
 
         # Unsupported MariaDB version (10.2 is unsupported)
         with self.assertRaises(Problem) as ctx:

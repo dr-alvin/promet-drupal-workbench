@@ -22,8 +22,8 @@ def validate_drupal_requirements(php: str, db_version: str, drush: str = "") -> 
         m = re.search(r"(\d+)\.(\d+)", str(php))
         if m:
             major, minor = int(m.group(1)), int(m.group(2))
-            if (major, minor) < (8, 3):
-                raise Problem(f"Drupal 11 requires PHP 8.3+; detected {php}")
+            if (major, minor) < (8, 1):
+                raise Problem(f"Drupal upgrade requires PHP 8.1+; detected {php}")
     if db_version:
         ver_str = str(db_version).strip()
         ver_lower = ver_str.lower()
@@ -31,18 +31,17 @@ def validate_drupal_requirements(php: str, db_version: str, drush: str = "") -> 
         if m:
             parts = tuple(int(x) for x in m.group(1).split("."))
             if "mariadb" in ver_lower or (parts[0] in (10, 11) and "mysql" not in ver_lower):
-                if parts < (10, 6):
-                    raise Problem(f"Drupal 11 requires MariaDB 10.6+; detected {db_version}")
+                if parts < (10, 3):
+                    raise Problem(f"Source database requires MariaDB 10.3+; detected {db_version}")
             elif "mysql" in ver_lower or "percona" in ver_lower or parts[0] == 8 or parts[0] == 5:
-                if parts < (8, 0):
-                    raise Problem(f"Drupal 11 requires MySQL 8.0+; detected {db_version}")
+                if parts < (5, 7):
+                    raise Problem(f"Source database requires MySQL 5.7+; detected {db_version}")
     if drush:
         m = re.search(r"(\d+)(?:\.(\d+))?", str(drush))
         if m:
             d_major = int(m.group(1))
-            d_minor = int(m.group(2) or 0)
-            if d_major < 12 or (d_major == 12 and d_minor < 5):
-                raise Problem(f"Drupal 11 requires Drush 13+ (or 12.5+); detected {drush}")
+            if d_major < 10:
+                raise Problem(f"Source site requires Drush 10+; detected {drush}")
 
 
 def output(argv):
@@ -405,7 +404,7 @@ class ContainerRuntime(SourceRuntime):
         database = expected["databaseName"] if expected else env(db).get("MYSQL_DATABASE", "")
         if not re.fullmatch(r"[A-Za-z0-9_]+", database):
             raise Problem("Source database name is unknown")
-        shell = 'MYSQL_PWD="${MYSQL_ROOT_PASSWORD:-root}"; export MYSQL_PWD; dump=$(command -v mariadb-dump || command -v mysqldump); "$dump" -uroot --single-transaction --skip-lock-tables --skip-triggers --hex-blob "$1"'
+        shell = 'u="${MYSQL_USER:-root}"; p="${MYSQL_PASSWORD:-${MYSQL_ROOT_PASSWORD:-root}}"; export MYSQL_PWD="$p"; dump=$(command -v mariadb-dump || command -v mysqldump); "$dump" -u"$u" --single-transaction --skip-lock-tables --skip-triggers --hex-blob "$1"'
         with tempfile.TemporaryFile() as errors, gzip.open(target, "wb") as out:
             proc = subprocess.Popen(
                 ["docker", "exec", db["Id"], "sh", "-c", shell, "d11-export", database],
@@ -464,6 +463,15 @@ class ContainerRuntime(SourceRuntime):
                 raise Problem(
                     "Source and running container manifests differ; synchronize the local runtime first"
                 )
+        drush_script = (
+            "vendor/bin/drush"
+            if (self.source / "vendor/bin/drush").is_file()
+            else (
+                "vendor/bin/drush.php"
+                if (self.source / "vendor/bin/drush.php").is_file()
+                else "vendor/drush/drush/drush.php"
+            )
+        )
         raw = output(
             [
                 "docker",
@@ -472,7 +480,7 @@ class ContainerRuntime(SourceRuntime):
                 mount,
                 cli["Id"],
                 "php",
-                "vendor/bin/drush.php",
+                drush_script,
                 "status",
                 "--format=json",
                 "--uri=" + uri,
@@ -509,7 +517,7 @@ class ContainerRuntime(SourceRuntime):
         php = str(s.get("php-version", ""))
         validate_profile_php(prof, php)
         # Password stays inside the container; database is a positional shell argument.
-        sql = 'MYSQL_PWD="${MYSQL_ROOT_PASSWORD:-root}"; export MYSQL_PWD; client=$(command -v mariadb || command -v mysql); "$client" -uroot -Nse "SELECT VERSION()" "$1"'
+        sql = 'u="${MYSQL_USER:-root}"; p="${MYSQL_PASSWORD:-${MYSQL_ROOT_PASSWORD:-root}}"; export MYSQL_PWD="$p"; client=$(command -v mariadb || command -v mysql); "$client" -u"$u" -Nse "SELECT VERSION()" "$1"'
         version = output(
             ["docker", "exec", db["Id"], "sh", "-c", sql, "d11-inspect", database]
         ).strip()
@@ -726,7 +734,7 @@ class LocalRuntime(SourceRuntime):
         database = (expected or {}).get("databaseName", "")
         if not database:
             raise Problem("Source database name is unknown")
-        shell = 'MYSQL_PWD="${MYSQL_ROOT_PASSWORD:-root}"; export MYSQL_PWD; dump=$(command -v mariadb-dump || command -v mysqldump); "$dump" -uroot --single-transaction --skip-lock-tables --skip-triggers --hex-blob "$1"'
+        shell = 'u="${MYSQL_USER:-root}"; p="${MYSQL_PASSWORD:-${MYSQL_ROOT_PASSWORD:-root}}"; export MYSQL_PWD="$p"; dump=$(command -v mariadb-dump || command -v mysqldump); "$dump" -u"$u" --single-transaction --skip-lock-tables --skip-triggers --hex-blob "$1"'
         with tempfile.TemporaryFile() as errors, gzip.open(target, "wb") as out:
             proc = subprocess.Popen(
                 ["sh", "-c", shell, "d11-export", database],
@@ -775,10 +783,19 @@ class LocalRuntime(SourceRuntime):
             raise Problem(
                 "Installed Drupal dependencies are missing; install the source lockfile before setup"
             )
+        drush_script = (
+            "vendor/bin/drush"
+            if (self.source / "vendor/bin/drush").is_file()
+            else (
+                "vendor/bin/drush.php"
+                if (self.source / "vendor/bin/drush.php").is_file()
+                else "vendor/drush/drush/drush.php"
+            )
+        )
         raw = output(
             [
                 "php",
-                "vendor/bin/drush.php",
+                drush_script,
                 "status",
                 "--format=json",
                 "--uri=" + url,
@@ -804,7 +821,7 @@ class LocalRuntime(SourceRuntime):
             )
         php = str(s.get("php-version", ""))
         validate_profile_php(prof, php)
-        sql = 'MYSQL_PWD="${MYSQL_ROOT_PASSWORD:-root}"; export MYSQL_PWD; client=$(command -v mariadb || command -v mysql); "$client" -uroot -Nse "SELECT VERSION()" "$1"'
+        sql = 'u="${MYSQL_USER:-root}"; p="${MYSQL_PASSWORD:-${MYSQL_ROOT_PASSWORD:-root}}"; export MYSQL_PWD="$p"; client=$(command -v mariadb || command -v mysql); "$client" -u"$u" -Nse "SELECT VERSION()" "$1"'
         version = output(["sh", "-c", sql, "d11-inspect", database]).strip()
         validate_profile_database(prof, version)
         validate_drupal_requirements(php, version, str(s.get("drush-version", "")))

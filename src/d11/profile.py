@@ -79,7 +79,7 @@ def validate_profile_database(profile: dict, database_version: str) -> None:
         "supportedTypes",
         ["MariaDB", "MySQL"] if expected_type in ("MariaDB", "MySQL") else [expected_type],
     )
-    pattern = db_info.get("supportedPattern", r"^(?:10\.(?:[3-9]|10|11)|11\.|8\.[0-9]+)")
+    pattern = db_info.get("supportedPattern", r"^(?:5\.7|10\.(?:[3-9]|10|11)|11\.|8\.[0-9]+)")
 
     engine = detect_database_engine(version)
     if engine not in supported_types:
