@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .auto_remediate import generate_remediation_proposals
 from .common import Problem, read, write
-from .compatibility import OBSOLETE_PERFORMANCE_MODULES, PROVUS_ECOSYSTEM_MODULES, REMOVED_CORE_TO_CONTRIB, is_provus_project, semver_match, semver_tuple, version_tuple
+from .compatibility import OBSOLETE_PERFORMANCE_MODULES, PROVUS_ECOSYSTEM_MODULES, REMOVED_CORE_TO_CONTRIB, is_clean_extension, is_provus_project, semver_match, semver_tuple, version_tuple
 from .knowledge import get_obsolete_modules, get_replacements
 from .patches import is_d11_compatible
 from .two_gate import compatibility_report, decide
@@ -560,13 +560,8 @@ def auto_decide(w, rid: str, accept_prereleases: bool = True, auto_remediate: bo
         manual_proposal = out / "manual-patches" / name / "proposal.json"
         existing = existing_decisions.get(name)
 
-        core_compat = is_d11_compatible(ext.get("coreConstraint")) if ext.get("coreConstraint") else True
-        is_clean = (
-            ext.get("status") == "ready"
-            and core_compat
-            and not ext.get("upgradeStatus", {}).get("issueCount")
-            and not ext.get("rector", {}).get("fixableCount")
-        )
+        # Single shared definition of "clean" (Invariant 2); see compatibility.is_clean_extension.
+        is_clean = is_clean_extension(ext)
 
         ctx = {
             "existing": existing,
@@ -580,9 +575,11 @@ def auto_decide(w, rid: str, accept_prereleases: bool = True, auto_remediate: bo
         }
 
         decision = None
+        decided_by = "fallback_defer"
         for rule in DECISION_RULES:
             decision = rule(ext, ctx)
             if decision is not None:
+                decided_by = rule.__name__
                 break
 
         if decision is None:
@@ -595,6 +592,13 @@ def auto_decide(w, rid: str, accept_prereleases: bool = True, auto_remediate: bo
                 "note": "Undetermined extension candidate; operator review required",
                 "origin": "automatic",
             }
+
+        # Provenance: which rule decided, and whether it overrode the
+        # evidence-derived recommendation shown to the Gate 1 reviewer.
+        recommended = ext.get("recommendedAction")
+        decision["decidedBy"] = decided_by
+        decision["recommendedAction"] = recommended
+        decision["overrodeRecommendation"] = bool(recommended) and decision["action"] != recommended
 
         decisions.append(decision)
         actions_count[decision["action"]] = actions_count.get(decision["action"], 0) + 1

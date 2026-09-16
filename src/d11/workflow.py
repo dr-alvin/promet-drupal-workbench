@@ -17,6 +17,7 @@ from typing import Optional
 from .common import (
     ROOT,
     Problem,
+    append_jsonl,
     command,
     digest,
     file_hash,
@@ -397,8 +398,7 @@ class Workflow:
 
     def event(self, out, kind, **data):
         out = Path(out)
-        with (out / "events.jsonl").open("a") as f:
-            f.write(json.dumps(redact_tree({"at": now(), "type": kind, **data})) + "\n")
+        append_jsonl(out / "events.jsonl", redact_tree({"at": now(), "type": kind, **data}))
 
     def _zero_copy_fingerprint(self, p, cfg):
         p = Path(p)
@@ -711,8 +711,25 @@ class Workflow:
         return compatibility_report(self, rid)
 
     def compatibility_decisions(self, rid, body):
+        """Save operator decisions from the dashboard.
+
+        Decision provenance (which engine rule decided, whether it overrode the
+        recommendation) is established by the server in auto_decide; it is never
+        accepted from browser input, like proposal digests.
+        """
+        from .compatibility import PROVENANCE_KEYS
         from .two_gate import decide
 
+        if isinstance(body, dict) and isinstance(body.get("decisions"), list):
+            body = {
+                **body,
+                "decisions": [
+                    {k: v for k, v in item.items() if k not in PROVENANCE_KEYS}
+                    if isinstance(item, dict)
+                    else item
+                    for item in body["decisions"]
+                ],
+            }
         with self.lock():
             return decide(self, rid, body)
 

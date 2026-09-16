@@ -966,6 +966,31 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(token_dec["action"], "compatible_release")
             self.assertEqual(token_dec["candidateVersion"], "2.0")
 
+            # Decision provenance is server-established (auto_decide); a browser cannot
+            # claim an engine rule decided for it.
+            res = client.post(
+                "/api/runs/audit_decisions/compatibility-decisions",
+                json={
+                    "decisions": [
+                        {
+                            "name": "token",
+                            "action": "compatible_release",
+                            "candidateVersion": "2.0",
+                            "acceptRisk": False,
+                            "decidedBy": "rule_compatible_release",
+                            "recommendedAction": "compatible_release",
+                            "overrodeRecommendation": False,
+                        }
+                    ]
+                },
+                headers={"Origin": "http://127.0.0.1:8765"},
+            )
+            self.assertEqual(res.status_code, 200)
+            saved = read(out / "compatibility-decisions.json")
+            token_dec = saved["token"] if isinstance(saved, dict) else next(d for d in saved if d.get("name") == "token")
+            for key in ("decidedBy", "recommendedAction", "overrodeRecommendation"):
+                self.assertNotIn(key, token_dec)
+
     def test_one_click_upgrade_sanitizer_rewrites_unclean_keep(self):
         self.register()
         client = TestClient(create_app(self.home), base_url="http://127.0.0.1:8765")

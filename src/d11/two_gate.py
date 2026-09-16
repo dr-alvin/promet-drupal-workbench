@@ -6,7 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from .common import ROOT, Problem, command, digest, file_hash, get_d11_home, now, read, write
+from .common import ROOT, Problem, command, digest, file_hash, get_d11_home, now, read, write, span
 from .knowledge import get_target_constraint
 from .risk import evaluate, finding
 
@@ -344,6 +344,9 @@ def audit(w, pid, out, state):
     out = Path(out)
     p, cfg = w.project(pid)
     p = Path(p)
+
+    def emit(**record):
+        w.event(out, "span", **record)
     try:
         from .trusted_hosts import ensure_trusted_hosts
         site_uri = cfg.get("site", {}).get("uri", "")
@@ -370,7 +373,8 @@ def audit(w, pid, out, state):
     state["checkpoint"] = "assessing"
     write(out / "state.json", state)
     w.event(out, "checkpoint", checkpoint=state["checkpoint"])
-    rec = command(
+    with span("assess", emit):
+        rec = command(
         [
             str(ROOT / "bin/d11"),
             "assess",
@@ -405,7 +409,8 @@ def audit(w, pid, out, state):
 
     fast = state.get("options", {}).get("fast", cfg.get("fastScan", True))
     state["scanMode"] = "fast" if fast else "full"
-    tool_checks = run_audit_tools(cfg, context, out, w, pid, fast=fast)
+    with span("audit_tools", emit, scanMode=state["scanMode"]):
+        tool_checks = run_audit_tools(cfg, context, out, w, pid, fast=fast)
     assessment["checks"].extend(tool_checks)
     capture_baseline = state.get("options", {}).get("capture_baseline", not fast)
     baseline_ok = True
@@ -424,7 +429,8 @@ def audit(w, pid, out, state):
         except Exception:
             pass
         try:
-            w.capture(p, cfg, out, "reference")
+            with span("baseline_capture", emit):
+                w.capture(p, cfg, out, "reference")
         except Exception as exc:
             baseline_ok = False
             baseline_error = str(exc)
@@ -451,7 +457,8 @@ def audit(w, pid, out, state):
     all_pkgs = {e.get("package") for e in context.get("extensions", []) if e.get("package")}
     uninstalled_pkgs = sorted(all_pkgs - pkgs_with_installed)
     target_ver = context.get("target") if context else None
-    solver = resolve(context["roots"]["composer"], out, target=target_ver, removals=uninstalled_pkgs)
+    with span("solver", emit):
+        solver = resolve(context["roots"]["composer"], out, target=target_ver, removals=uninstalled_pkgs)
     valid_tools = all(item.get("status") in ("passed", "findings") for item in tool_checks)
     compatibility_status = (
         "blocked"
@@ -501,9 +508,10 @@ def audit(w, pid, out, state):
             and extension.get("package") not in core_packages
         }
     )
-    patch_evidence = discover_patches(
-        solver, out, contrib_packages, context=context, patch_packages=affected
-    )
+    with span("patch_discovery", emit, packages=len(contrib_packages)):
+        patch_evidence = discover_patches(
+            solver, out, contrib_packages, context=context, patch_packages=affected
+        )
     from .compatibility import build as build_compatibility
 
     prior_decisions = {}
@@ -522,9 +530,12 @@ def audit(w, pid, out, state):
                 if value.get("origin") == "operator"
             }
             break
-    compatibility = build_compatibility(
-        context, tool_checks, solver, patch_evidence, out, prior_decisions
-    )
+    # The report reads the scan mode from recorded run state, not from scanner argv.
+    context["scanMode"] = state.get("scanMode")
+    with span("compatibility_build", emit):
+        compatibility = build_compatibility(
+            context, tool_checks, solver, patch_evidence, out, prior_decisions
+        )
     write(out / "compatibility-decisions.json", compatibility.get("decisions", {}))
     compatibility_check = next(
         item for item in assessment["checks"] if item.get("id") == "compatibility"
@@ -537,7 +548,8 @@ def audit(w, pid, out, state):
     )
     write(out / "result/result.json", assessment)
     cfg = _batch_config(p, cfg, out, context, route_selection, baseline_ok, solver)
-    batch = plan(cfg, context, out)
+    with span("plan", emit):
+        batch = plan(cfg, context, out)
     write(out / "plan.json", batch)
     write(out / "batch-config.json", cfg)
     state["batchHash"] = digest(
@@ -821,6 +833,7 @@ def _rebuild_after_decisions(w, rid, out, state, decisions):
     p, cfg = w.project(state["project"])
     p = Path(p)
     context = read(out / "result/context.json")
+    context["scanMode"] = state.get("scanMode")
     tool_checks = read(out / "audit-tools.json")["checks"]
     patches = read(out / "patch-candidates.json")
     manifest = read(Path(context["roots"]["composer"]) / "composer.json")
@@ -2229,7 +2242,17 @@ def capture_run_baseline(w, rid):
     state["checkpoint"] = "capturing_baseline"
     write(out / "state.json", state)
     w.event(out, "checkpoint", checkpoint="capturing_baseline")
-    w.capture(p, cfg, out, "reference")
+    try:
+        w.capture(p, cfg, out, "reference")
+    except Exception as exc:
+        # Leave an explicit failed checkpoint: a run stuck on "capturing_baseline" reads as
+        # still running to the dashboard and hides the error from the evidence trail.
+        state["checkpoint"] = "baseline_failed"
+        state["baselineError"] = str(exc)
+        write(out / "state.json", state)
+        w.event(out, "checkpoint", checkpoint="baseline_failed", error=str(exc))
+        raise
+    state.pop("baselineError", None)
     state["checkpoint"] = "baseline_captured"
     write(out / "state.json", state)
     w.event(out, "checkpoint", checkpoint="baseline_captured")

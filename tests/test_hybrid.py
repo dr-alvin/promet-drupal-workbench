@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -428,14 +429,62 @@ class HybridCompatibilityTests(unittest.TestCase):
             cfg = {"site": {"uri": "http://managed"}, "recovery": {"database": str(database)}}
             context = {"roots": {"composer": str(site), "custom": []}}
             with (
+                patch.dict(os.environ, {"D11_HOME": str(root / "home")}),
                 patch("d11lib.audit_tools.command", side_effect=fake),
                 patch("d11lib.audit_tools._import_database", return_value=imported),
+                patch("d11lib.audit_tools._spawn_detached", return_value=4242) as spawn,
             ):
                 checks = run_audit_tools(cfg, context, out, object(), "site")
             self.assertEqual([x["status"] for x in checks], ["passed", "passed", "passed"])
             self.assertEqual((site / "composer.json").read_text(), before)
             self.assertFalse((out / "analysis").exists())
-            self.assertTrue(read(out / "analysis-runtime.json")["candidateUnchanged"])
+            runtime_evidence = read(out / "analysis-runtime.json")
+            self.assertTrue(runtime_evidence["candidateUnchanged"])
+            steps = {item["step"]: item for item in runtime_evidence["lifecycle"]}
+            self.assertEqual(steps["install_tools"]["stackCache"], "miss")
+            # On a miss the application vendor is copied so Composer applies only the delta.
+            self.assertTrue(steps["copy"]["vendorCopied"])
+            # Teardown is detached; its compose file survives the analysis copy's removal.
+            self.assertEqual(steps["teardown"]["status"], "detached")
+            self.assertEqual(steps["teardown"]["pid"], 4242)
+            spawn.assert_called_once()
+            self.assertTrue(Path(steps["teardown"]["argv"][5]).is_file())
+            self.assertEqual({e["step"] for e in runtime_evidence["spans"]} >= {"copy_analysis", "install_tools", "rector", "teardown"}, True)
+
+            # Second run with a cached toolchain for this exact manifest: vendor is not
+            # copied, the cache is restored and Composer runs `install`, not `update`.
+            from d11lib.audit_tools import _analysis_manifest, compute_stack_key
+            from d11lib.common import digest as _digest
+
+            stack = root / "home/cache/stacks" / compute_stack_key(context, cfg, site)
+            (stack / "vendor/bin").mkdir(parents=True)
+            (stack / "vendor/bin/rector").write_text("#!/bin/sh")
+            (stack / "composer.lock").write_text(json.dumps({"packages": [{"name": "drupal/upgrade_status"}]}))
+            (stack / "manifest.sha256").write_text(_digest(_analysis_manifest(site)[1]) + "\n")
+            composer_calls = []
+
+            def fake_hit(argv, cwd, timeout=120, **kwargs):
+                if "--entrypoint" in argv and "composer" in argv:
+                    composer_calls.append(argv)
+                    self.assertTrue((Path(cwd) / "site/vendor/bin/rector").is_file(), "cached vendor restored before Composer")
+                return fake(argv, cwd, timeout, **kwargs)
+
+            out2 = root / "out2"
+            out2.mkdir()
+            with (
+                patch.dict(os.environ, {"D11_HOME": str(root / "home")}),
+                patch("d11lib.audit_tools.command", side_effect=fake_hit),
+                patch("d11lib.audit_tools._import_database", return_value=imported),
+                patch("d11lib.audit_tools._spawn_detached", return_value=4243),
+            ):
+                checks2 = run_audit_tools(cfg, context, out2, object(), "site")
+            self.assertEqual([x["status"] for x in checks2], ["passed", "passed", "passed"])
+            steps2 = {item["step"]: item for item in read(out2 / "analysis-runtime.json")["lifecycle"]}
+            self.assertFalse(steps2["copy"]["vendorCopied"])
+            self.assertEqual(steps2["install_tools"]["stackCache"], "hit")
+            self.assertEqual(len(composer_calls), 1)
+            self.assertIn("install", composer_calls[0])
+            self.assertNotIn("update", composer_calls[0])
 
     def test_analysis_network_avoids_existing_subnets(self):
         import ipaddress

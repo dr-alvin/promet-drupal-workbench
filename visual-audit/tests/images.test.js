@@ -12,6 +12,21 @@ test('real Chromium image coverage and interaction regressions',async t=>{
   const page=await browser.newPage({viewport:{width:640,height:480}});
   await t.test('visible broken image fails',async()=>{await page.setContent('<img width="24" height="24" src="data:image/png,bad">');await assert.rejects(readiness(page,scenario));});
   await t.test('hidden responsive variant is outside coverage',async()=>{await page.setContent('<style>@media(min-width:600px){#mobile{display:none}}</style><img id="mobile" src="data:image/png,bad"><h1>Home</h1>');const r=await readiness(page,scenario);assert.equal(r.outsideCoverage.length,1);assert.equal(r.ready,true);});
+  await t.test('lazy picture sources are resolved to the final candidate before capture',async()=>{
+   // srcset candidates split on whitespace and commas, so the data URL must be percent-encoded.
+   const big='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="blue"/></svg>');
+   // lazysizes-style markup: fallback <img data-src> (24px) plus a <source data-srcset> (48px)
+   // that applies at this viewport. Without eager resolution the rendered size depends on
+   // whether the page's lazy loader swapped the source before the screenshot.
+   await page.setContent('<picture><source media="(min-width: 600px)" width="48" height="48" data-srcset="'+big+' 1x"><img class="lazyload" width="24" height="24" style="width:auto;height:auto" data-src=\''+pixel+'\' src=""></picture>');
+   const r=await readiness(page,scenario);
+   assert.equal(r.ready,true);
+   const state=await page.evaluate(()=>{const img=document.querySelector('img');return{natural:img.naturalWidth,rendered:img.getBoundingClientRect().width,cls:img.className,srcset:document.querySelector('source').getAttribute('srcset')};});
+   assert.equal(state.natural,48);
+   assert.equal(state.rendered,48);
+   assert.equal(state.cls,'lazyloaded');
+   assert.ok(state.srcset&&state.srcset.startsWith('data:image/svg+xml'));
+  });
   await t.test('bounded scrolling exercises lazy image',async()=>{await page.setContent('<div style="height:1400px">top</div><img width="24" height="24" loading="lazy" src=\''+pixel+'\'>');const r=await readiness(page,scenario);assert.equal(r.covered.length,1);assert.ok(r.scrollDistance>0);});
   await t.test('required hidden image fails until interaction',async()=>{await page.setContent('<button onclick="document.querySelector(\'img\').style.display=\'block\'">Open</button><img id="required" style="display:none" src=\''+pixel+'\'>');const s={ready:{timeoutMs:200,requiredImages:['#required']}};await assert.rejects(readiness(page,s));await page.locator('button').click();assert.equal((await readiness(page,s)).ready,true);});
   await t.test('missing required image and exhausted lazy readiness fail',async()=>{await assert.rejects(readiness(page,{ready:{timeoutMs:100,requiredImages:['#missing']}}));await page.setContent('<img width="40" height="40" data-src="unexercised.png">');await assert.rejects(readiness(page,scenario));});

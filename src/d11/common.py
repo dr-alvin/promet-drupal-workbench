@@ -10,7 +10,9 @@ import re
 import signal
 import subprocess
 import tempfile
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -152,6 +154,61 @@ def safe_output(text):
         return redact(text)
 
 
+_APPEND_LOCK = threading.Lock()
+
+
+def append_jsonl(path, record):
+    """Append one JSON record as a single line, safe across threads and processes.
+
+    Evidence records can run to megabytes (captured command output). A buffered text
+    ``write`` happened to reach the kernel as one syscall in practice, but that relies on
+    CPython buffering details; one ``os.write`` loop under ``O_APPEND`` makes the
+    guarantee explicit between processes, and the lock serializes threads here.
+    """
+    data = memoryview((json.dumps(record) + "\n").encode())
+    with _APPEND_LOCK:
+        fd = os.open(str(path), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        try:
+            while data:
+                data = data[os.write(fd, data) :]
+        finally:
+            os.close(fd)
+
+
+@contextmanager
+def span(step, emit=None, sink=None, **extra):
+    """Time one phase of work for evidence.
+
+    The record (``step``, ``status``, ``startedAt``, ``finishedAt``, ``elapsedSeconds``)
+    is appended to ``sink`` when given and passed to ``emit`` (for example a workflow
+    ``event`` writer) so run time can be attributed to phases, not only to commands.
+    """
+    started_at = now()
+    started = time.monotonic()
+    status = "passed"
+    try:
+        yield
+    except BaseException:
+        status = "failed"
+        raise
+    finally:
+        record = {
+            "step": step,
+            "status": status,
+            "startedAt": started_at,
+            "finishedAt": now(),
+            "elapsedSeconds": round(time.monotonic() - started, 3),
+            **extra,
+        }
+        if sink is not None:
+            sink.append(record)
+        if emit is not None:
+            try:
+                emit(**record)
+            except Exception:
+                pass
+
+
 def command(argv, cwd, timeout=120, input_text=None, env=None):
     if (
         not isinstance(argv, list)
@@ -167,8 +224,7 @@ def command(argv, cwd, timeout=120, input_text=None, env=None):
 
     def event(data):
         if events:
-            with open(events, "a") as stream:
-                stream.write(json.dumps(redact_tree(data)) + "\n")
+            append_jsonl(events, redact_tree(data))
 
     event({"type": "command_started", **record})
     try:

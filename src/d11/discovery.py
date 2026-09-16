@@ -496,6 +496,14 @@ def static_discovery(cfg):
     return result
 
 
+def _drush_probe_workers():
+    """Concurrency for the read-only drush probes: serial by default, opt-in via env."""
+    try:
+        return max(1, min(int(os.environ.get("D11_DRUSH_PROBE_WORKERS", "1")), 4))
+    except ValueError:
+        return 1
+
+
 def runtime_discovery(cfg, roots, selected):
     require_nonprod(cfg)
     if not cfg.get("site", {}).get("uri"):
@@ -539,6 +547,7 @@ def runtime_discovery(cfg, roots, selected):
         "pendingUpdates": ["updatedb:status", "--format=json"],
         "configurationStatus": ["config:status", "--format=json"],
     }
+    runnable = {}
     for name, args in probes.items():
         # Use the selected installation's command catalog and default fields.
         # No db-version field is assumed; absent database version stays unknown.
@@ -550,7 +559,19 @@ def runtime_discovery(cfg, roots, selected):
                 "message": "Command not verified in selected Drush catalog: " + args[0],
             }
             continue
-        records[name] = probe("drush", args + site)
+        runnable[name] = args
+    # These probes are read-only and independent, but each is a full Drupal bootstrap in
+    # the site's container, so they run serially unless the operator opts in to overlap
+    # (D11_DRUSH_PROBE_WORKERS=2..4). Every probe keeps its own evidence record either way.
+    workers = _drush_probe_workers()
+    if workers > 1 and len(runnable) > 1:
+        with ThreadPoolExecutor(max_workers=min(workers, len(runnable))) as pool:
+            futures = {name: pool.submit(probe, "drush", args + site) for name, args in runnable.items()}
+            for name, future in futures.items():
+                records[name] = future.result()
+    else:
+        for name, args in runnable.items():
+            records[name] = probe("drush", args + site)
     for name in ["php"] + list(probes):
         rec = records[name]
         if rec["exitCode"] != 0:
@@ -627,6 +648,23 @@ def toolkit_state_hashes(bases=None):
     return hashes
 
 
+def _metadata_hashes(directory):
+    """Hash every ``*.info.yml`` and ``installed.json`` under ``directory`` in one walk.
+
+    Equivalent to two ``rglob`` passes (which each traverse the whole tree, and vendor/
+    is large) and yields the same keys, so existing discovery cache keys stay valid.
+    Like ``rglob`` on this interpreter, symlinked directories are not descended.
+    """
+    result = {}
+    for base, _dirs, names in os.walk(directory, followlinks=False):
+        for name in names:
+            if name == "installed.json" or name.endswith(".info.yml"):
+                path = Path(base, name)
+                if path.is_file():
+                    result[str(path)] = file_hash(path)
+    return result
+
+
 def discovery_key(cfg, roots, toolkit_bases=None):
     launcher = ROOT / "bin/d11"
     dependencies = ROOT / "requirements.txt"
@@ -646,9 +684,7 @@ def discovery_key(cfg, roots, toolkit_bases=None):
         + ([roots["config"]] if roots["config"] else [])
     ):
         directory = Path(base)
-        for pattern in ("*.info.yml", "installed.json"):
-            for p in directory.rglob(pattern):
-                inputs["external"][str(p)] = file_hash(p)
+        inputs["external"].update(_metadata_hashes(directory))
         if directory != Path(cfg["_root"]) and Path(cfg["_root"]) not in directory.parents:
             inputs["external"][str(directory)] = state_hashes(directory)
     return digest(inputs)

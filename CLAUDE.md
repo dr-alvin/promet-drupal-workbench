@@ -80,8 +80,9 @@ cd /path/to/promet-drupal-workbench
 cd /path/to/promet-drupal-workbench
 ./.venv/bin/pytest tests -q
 # or
-PYTHONPATH=src:tests .venv/bin/python -m unittest discover -s tests
+D11_HOME=$(mktemp -d) PYTHONPATH=src:tests .venv/bin/python -m unittest discover -s tests
 ```
+`conftest.py` points `D11_HOME` at a throwaway directory for the whole pytest session, so the suite never reads or writes the developer's real `~/.d11` and produces the same results on every machine. Set it yourself when using `unittest discover` directly.
 
 ### Start Dashboard Server
 ```bash
@@ -92,6 +93,19 @@ PYTHONPATH=src:tests .venv/bin/python -m unittest discover -s tests
 ```bash
 ./bin/d11 upgrade /path/to/drupal-project -y
 ```
+
+### Profile a Run (where did the time go?)
+```bash
+./.venv/bin/python scripts/profile_run.py ~/.d11/runs/<run-id>        # phases (span events), top-level commands, unattributed remainder
+./.venv/bin/python scripts/profile_run.py ~/.d11/runs/<run-id> --json
+```
+Nested commands (e.g. drush probes inside `d11 assess`) are counted once under their parent.
+
+### Verify a Refactor Against the Golden Baseline
+```bash
+./verify-refactor.sh ~/.d11/runs/<run-id>   # zero semantic differences expected after speed-only changes
+```
+`scripts/normalize_output.py` strips timestamps, UUIDs, digests and Compose project names (`d11-analysis-*` and `d11-stack-*`). Re-capture `baselines/golden-run-pre-refactor/` from a fresh run on `main` whenever report schema changes are intentional.
 
 ### Trigger Rollback (CLI)
 ```bash
@@ -118,3 +132,6 @@ RUN_ID=$(./bin/d11 workflow runs --project "$PROJECT" | jq -r '.[0].id')
 - **Lock contention**: Delete `~/.d11/workflow.lock` if an interrupted process left a stale lock.
 - **58 unresolved decisions**: Caused if the UI attempts to set `action: "keep"` on non-clean modules. Use `isCleanExtension` in frontend JS and ensure decisions are aligned to `compatible_release`.
 - **Missing Python modules**: `common.py` automatically injects the toolkit `.venv` site-packages into `sys.path`.
+- **Analysis stack cache**: the resolved scanner toolchain (`vendor/` + `composer.lock`) is cached under `~/.d11/cache/stacks/<stack-key>/` and restored on the next run with the same source lock, database, profile and custom roots (`composer install` instead of `update`). Set `refresh_stack: true` on the run to force a fresh resolution; a failed restore falls back to `update` automatically.
+- **Detached teardown**: `docker compose down` runs in the background after evidence is written; the next run with the same stack finishes any pending teardown first (`~/.d11/cache/stacks/<key>/teardown/pending.json`).
+- **Drush probe concurrency**: runtime probes are serial by default (each is a full Drupal bootstrap in the site container). `D11_DRUSH_PROBE_WORKERS=3` opts in to overlapping them; every probe keeps its own evidence record.

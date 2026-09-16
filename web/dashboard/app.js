@@ -1411,8 +1411,9 @@ async function fetchProjectActivity(pid){
    res.events.forEach(e => {
     const t = (e.at || '').slice(11, 19) || new Date().toLocaleTimeString();
     const type = (e.type || 'checkpoint').replaceAll('_', ' ');
-    const detail = (e.checkpoint || e.status || e.action || '').replaceAll('_', ' ');
-    const line = `[${t}] ${type}${detail ? ': ' + detail : ''}`;
+    const detail = (e.checkpoint || e.step || e.status || e.action || '').replaceAll('_', ' ');
+    const timing = e.type === 'span' && typeof e.elapsedSeconds === 'number' ? ` (${e.elapsedSeconds.toFixed(1)}s)` : '';
+    const line = `[${t}] ${type}${detail ? ': ' + detail : ''}${timing}`;
     if(!projectActivityLogs[pid].includes(line)) projectActivityLogs[pid].push(line);
    });
    renderConsoleLogs(pid);
@@ -1899,6 +1900,7 @@ async function startCapturingBaseline(targetRunId) {
     isCapturingBaseline = false;
     clearInterval(baselineCaptureTimer);
     baselineCaptureTimer = null;
+    if (typeof updateUpgradeActionButtons === 'function') updateUpgradeActionButtons();
 
     gate = null;
     gateRunId = '';
@@ -1918,6 +1920,9 @@ async function startCapturingBaseline(targetRunId) {
     isCapturingBaseline = false;
     clearInterval(baselineCaptureTimer);
     baselineCaptureTimer = null;
+    // updateBaselineCaptureUI() only paints the capturing state; restore the buttons
+    // explicitly so a failed capture does not leave "Capturing Baseline (Ns)..." spinning.
+    if (typeof updateUpgradeActionButtons === 'function') updateUpgradeActionButtons();
 
     gate = null;
     gateRunId = '';
@@ -2228,7 +2233,8 @@ function getRecommendedAction(row){
  const candVer = row.releaseCandidates?.[0]?.version || row.targetVersion;
  const isSameVersion = Boolean(row.currentVersion && candVer && row.currentVersion === candVer);
  const isClean = isCleanExtension(row);
- if(row.status==='ready' || (isSameVersion && isClean))return 'keep';
+ // Invariant 2: keep only when clean (ready AND no findings); a ready row with findings falls through to remediation.
+ if(isClean)return 'keep';
 
  if(row.status==='update_available'||row.recommendedAction==='compatible_release')return 'compatible_release';
  if(candVer)return 'compatible_release';
@@ -3535,11 +3541,17 @@ async function executeConfirmedUpgrade() {
     modalBtn.innerHTML = '<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Starting Upgrade (0s)...';
   }
 
+  // Confirming is the operator's move to the Upgrade step: switch there (and to #upgrade)
+  // right away so progress, the console and any refusal are watched from that stage,
+  // instead of only after the server has answered.
+  closeUpgradeConfirmModal();
+  showStage('upgrade', true);
+
   try {
     const digest = (typeof compatibility !== 'undefined' && compatibility && compatibility.digest) || (typeof report !== 'undefined' && report && report.compatibility ? report.compatibility.digest : null) || (typeof gate !== 'undefined' && gate && gate.compatibility ? gate.compatibility.digest : null) || (typeof decisionView !== 'undefined' ? decisionView.digest : null) || null;
     const decisions = typeof compatibilityDecisions === 'function' ? compatibilityDecisions() : [];
     await api('runs/' + gateRunId + '/one-click-upgrade', { reportDigest: digest, decisions, acceptRisks: true });
-    
+
     isStartingUpgrade = false;
     clearInterval(upgradeTimer);
     upgradeTimer = null;
@@ -3550,8 +3562,6 @@ async function executeConfirmedUpgrade() {
       decisionView.baseline = JSON.parse(JSON.stringify(compatibilityDraft));
       if (typeof updateDecisionDirty === 'function') updateDecisionDirty();
     }
-    closeUpgradeConfirmModal();
-    showStage('upgrade', true);
     report = null;
     await refresh();
     // The Upgrade step is gated on an existing audit/upgrade run, so the call

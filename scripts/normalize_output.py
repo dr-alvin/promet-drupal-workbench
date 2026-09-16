@@ -17,7 +17,16 @@ WORKBENCH = ROOT / "artifacts" / "workbench"
 RE_UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
 RE_ISO_TS = re.compile(r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\b")
 RE_TMP = re.compile(r'/(?:private/)?var/folders/[^\s"\'<>]+|/tmp/[^\s"\'<>]+')
-RE_COMPOSE_PROJ = re.compile(r"\bd11-analysis-[0-9a-f]{8,32}\b")
+# Any user's home directory (macOS or Linux), so a baseline captured on one developer's
+# machine compares cleanly on another's. Applied after the exact HOME/ROOT replacements.
+RE_USER_HOME = re.compile(r"/(?:Users|home)/[^/\s\"'<>]+")
+# Disposable analysis Compose project names carry a per-run/per-stack hash. Two
+# generations exist: "d11-analysis-<hex>" (pre-refactor baseline) and the current
+# "d11-stack-<pid8>-<stackkey10>" from audit_tools.run(). Both normalize to one token
+# so a golden-baseline diff never flags the project name itself.
+RE_COMPOSE_PROJ = re.compile(
+    r"\bd11-analysis-[0-9a-f]{8,32}\b|\bd11-stack-[A-Za-z0-9_-]{1,8}-[0-9a-f]{10}\b"
+)
 
 DYNAMIC_KEYS = {
     "runId": "<RUN_ID>",
@@ -68,7 +77,8 @@ def normalize_string(text: str, root_str: str = str(ROOT), home_str: str = str(H
     text = text.replace(home_str, "<HOME>")
     text = text.replace(root_str, "<ROOT>")
     text = RE_TMP.sub("<TMPDIR>", text)
-    text = RE_COMPOSE_PROJ.sub("d11-analysis-<RUN_ID>", text)
+    text = RE_USER_HOME.sub("<USER_HOME>", text)
+    text = RE_COMPOSE_PROJ.sub("<COMPOSE_PROJECT>", text)
     text = RE_UUID.sub("<UUID>", text)
     text = RE_ISO_TS.sub("<TIMESTAMP>", text)
     return text

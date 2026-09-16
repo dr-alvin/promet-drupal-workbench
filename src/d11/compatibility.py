@@ -20,6 +20,8 @@ DECISIONS = {
     "defer",
 }
 PRE_RELEASE = re.compile(r"(?:dev|alpha|beta|rc)", re.I)
+# Optional decision keys that record how a decision was reached.
+PROVENANCE_KEYS = ("decidedBy", "recommendedAction", "overrodeRecommendation")
 removed_core = get_removed_core()
 REMOVED_CORE_TO_CONTRIB = {
     "action": "drupal/action",
@@ -119,6 +121,25 @@ def semver_tuple(value):
 def fixture_extension(extension):
     parts = Path(extension.get("path") or "").parts
     return any(part.lower() in ("tests", "test", "fixtures", "examples") for part in parts)
+
+
+def is_clean_extension(row):
+    """Invariant 2: an extension is clean only when completed evidence shows no work.
+
+    This is the single definition shared by the report builder, the automated
+    decision engine and (mirrored) the dashboard. ``keep`` is permitted only for
+    clean extensions.
+    """
+    if not isinstance(row, dict) or row.get("status") != "ready":
+        return False
+    if (row.get("upgradeStatus") or {}).get("issueCount"):
+        return False
+    if (row.get("rector") or {}).get("fixableCount"):
+        return False
+    constraint = row.get("coreConstraint")
+    if constraint and not is_d11_compatible(constraint):
+        return False
+    return True
 
 
 def safe_upgrade(row, checks):
@@ -245,9 +266,15 @@ def _config_references(context, name, texts=None):
     return matches[:100]
 
 
-def _safe_default(status, release_candidates, target, kind, fixes):
-    """Return only decisions that require no risk acceptance or human inference."""
-    if status == "ready":
+def _safe_default(status, release_candidates, target, kind, fixes, issues=(), recommended=None):
+    """Return only decisions that require no risk acceptance or human inference.
+
+    ``keep`` is returned only when the extension is clean (Invariant 2): status
+    ``ready`` with no Upgrade Status issues and no Rector fixes, and only when the
+    evidence-derived recommendation is not ``remove``; an uninstalled extension
+    recommended for removal is left for the operator or the decision engine.
+    """
+    if status == "ready" and not issues and not fixes and recommended != "remove":
         return {
             "action": "keep",
             "candidateId": None,
@@ -331,7 +358,12 @@ def build(context, tool_checks, solver, patches, out, decisions=None, provider=N
     excluded = []
     seen = set()
     us_argv = upgrade.get("command", {}).get("argv", []) if isinstance(upgrade, dict) else []
-    ignore_contrib = "--ignore-contrib" in us_argv or context.get("scanMode") == "fast"
+    scan_mode = context.get("scanMode")
+    if scan_mode in ("fast", "full"):
+        ignore_contrib = scan_mode == "fast"
+    else:
+        # Older runs recorded no scanMode; fall back to the executed argv.
+        ignore_contrib = "--ignore-contrib" in us_argv
 
     for extension in extensions:
         if _source(extension) == "core" and extension.get("name") not in removed_core:
@@ -495,7 +527,7 @@ def build(context, tool_checks, solver, patches, out, decisions=None, provider=N
             and not fixes
         ):
             status = "ready"
-            recommended = "compatible_release"
+            recommended = "keep"
             evidence = "Declared Drupal 11 support plus completed Upgrade Status scan"
         elif upgrade.get("status") not in ("passed", "findings"):
             status = "unknown"
@@ -567,7 +599,12 @@ def build(context, tool_checks, solver, patches, out, decisions=None, provider=N
                     "origin": "automatic",
                 }
             else:
-                decision = _safe_default(status, release_candidates, target, kind, fixes) or {}
+                decision = (
+                    _safe_default(
+                        status, release_candidates, target, kind, fixes, issues, recommended
+                    )
+                    or {}
+                )
             is_automatic = True
         elif is_tb_megamenu_v3 and decision.get("action") in ("compatible_release", "update_available"):
             cand_v = str(decision.get("candidateVersion") or "")
@@ -1055,6 +1092,11 @@ def validate_decisions(report, decisions):
             "note": str(item.get("note", "")).strip(),
             "origin": item.get("origin"),
         }
+        # Provenance recorded by the decision engine: which rule decided and
+        # whether it overrode the evidence-derived recommendation.
+        for key in PROVENANCE_KEYS:
+            if key in item:
+                normalized[item["name"]][key] = item[key]
     for name, row in known.items():
         if name not in normalized and row.get("decision"):
             normalized[name] = dict(row["decision"])

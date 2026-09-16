@@ -1,7 +1,15 @@
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+
+# Tests must never read or write the developer's real ~/.d11: results have to be identical
+# on every machine, and a run must leave the developer's workbench state untouched. Set
+# before d11 is imported so common.D11_HOME picks it up too. Tests that exercise the
+# default location (tests/test_d11_home.py) unset the variable themselves.
+os.environ["D11_HOME"] = tempfile.mkdtemp(prefix="d11-test-home-")
 for sub in ("src", "tests"):
     p = str(ROOT / sub)
     if p not in sys.path:

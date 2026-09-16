@@ -113,6 +113,27 @@ def derive_visual_config(
     return base_visual
 
 
+def _remove_project_containers(compose_project, env):
+    """Force-remove every container belonging to a Compose project; return the survivors."""
+    listing = subprocess.run(
+        ["docker", "ps", "-aq", "--filter", f"label=com.docker.compose.project={compose_project}"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    ids = listing.stdout.split()
+    if not ids:
+        return []
+    subprocess.run(["docker", "rm", "-f", *ids], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    still = subprocess.run(
+        ["docker", "ps", "-aq", "--filter", f"label=com.docker.compose.project={compose_project}"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    return still.stdout.split()
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument(
@@ -310,12 +331,15 @@ def main():
                     "raise AUDIT_TIMEOUT_SECONDS for large scenario catalogs",
                     file=sys.stderr,
                 )
-                subprocess.run(
-                    prefix + ["down", "--timeout", "5"],
-                    env=env,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                # `compose down` does not remove the one-off container created by
+                # `compose run`; remove every container of this project explicitly, and
+                # say so if that fails rather than leaving orphans running for hours.
+                leftover = _remove_project_containers(compose_project, env)
+                if leftover:
+                    print(
+                        "Could not remove visual audit containers: " + ", ".join(leftover),
+                        file=sys.stderr,
+                    )
                 code = 2
             write(
                 out / "launcher-metrics.json",

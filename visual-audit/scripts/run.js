@@ -102,4 +102,9 @@ async function main(){
     report(result,scenarios);return code;
   } catch(e){const code=[1,2,3,64].includes(e.code)?e.code:2;report({schemaVersion:'1.0',status:code===3?'blocked':'tool_failure',exitCode:code,message:e.message},scenarios);return code;}
 }
-main().then(code=>{process.exitCode=code;});
+main().then(code=>{process.exitCode=code;},e=>{console.error(e);process.exitCode=2;}).finally(()=>{
+  // Backstop/Playwright can leave browser handles open after resolving, which keeps the
+  // container alive until the launcher's timeout kills it. Reports are written
+  // synchronously above, so it is safe to force the exit once the loop is otherwise idle.
+  setTimeout(()=>process.exit(process.exitCode??2),2000).unref();
+});

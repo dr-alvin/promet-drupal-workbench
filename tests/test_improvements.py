@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import time
@@ -98,6 +99,40 @@ class Improvements(unittest.TestCase):
                 discover(cfg, True)
         self.assertEqual(peak, 2)
         self.assertFalse(drush_overlap)
+
+    def test_drush_probes_overlap_only_when_opted_in(self):
+        import threading
+
+        active = 0
+        drush_peak = 0
+        lock = threading.Lock()
+        original = command
+
+        def observe(argv, cwd, timeout=120):
+            nonlocal active, drush_peak
+            with lock:
+                active += 1
+                if "drush" in argv:
+                    drush_peak = max(drush_peak, active)
+            time.sleep(0.03)
+            try:
+                return original(argv, cwd, timeout)
+            finally:
+                with lock:
+                    active -= 1
+
+        with tempfile.TemporaryDirectory() as td:
+            cfg = self.fixture(td)
+            with (
+                patch.dict(os.environ, {"D11_DRUSH_PROBE_WORKERS": "3"}),
+                patch("d11lib.discovery.command", side_effect=observe),
+            ):
+                result = discover(cfg, True)
+        self.assertGreaterEqual(drush_peak, 2)
+        # Every probe still has its own evidence record.
+        commands = result["runtime"]["commands"]
+        for name in ("status", "extensions", "activeExtensions", "pendingUpdates", "configurationStatus"):
+            self.assertIn("argv", commands[name], name)
 
     def test_image_build_key(self):
         import visual_audit

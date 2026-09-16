@@ -13,7 +13,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from .common import Problem, command, digest, file_hash, get_d11_home, now, write
+from .common import Problem, command, digest, file_hash, get_d11_home, now, read, span, write
 from .profile import get_profile
 from .source_runtime import get_runtime_adapter
 
@@ -134,8 +134,17 @@ def _record(identifier, rec, parser, version=None, accepted_codes=(0, 1, 2)):
     }
 
 
-def _copy_analysis(source, target, excluded_paths=()):
+def _copy_analysis(source, target, excluded_paths=(), include_vendor=True):
+    """Copy the candidate for disposable analysis.
+
+    The application's vendor tree is copied by default: Composer then only applies the
+    scanner-toolchain delta, which is the path proven to work in this environment. It is
+    skipped only when a verified stack-cache hit will supply vendor/ instead — installing
+    ~500 packages into an empty vendor/ inside the bind mount failed in practice.
+    """
     ignored = {".git", ".ddev", ".docksal", "node_modules", "sites/default/files", "private", "artifacts", "tools"}
+    if not include_vendor:
+        ignored.add("vendor")
     ignored_extensions = (".sql", ".sql.gz", ".tar.gz", ".tgz", ".zip")
 
     def ignore(path, names):
@@ -230,6 +239,85 @@ if (getenv('MYSQL_DATABASE')) {
             settings_php.write_text("<?php\n" + snippet + "\n", encoding="utf-8")
 
 
+STACK_MANIFEST_MARKER = "manifest.sha256"
+ANALYSIS_PACKAGES = (
+    "phpstan/phpstan",
+    "mglaman/phpstan-drupal",
+    "mglaman/drupal-check",
+    "drupal/core-dev",
+    "drupal/upgrade_status",
+    "palantirnet/drupal-rector",
+)
+
+
+def _analysis_manifest(source):
+    """Build the disposable scanner manifest from the candidate's composer.json/lock.
+
+    Pure function of the source files, so it can be computed before the copy to decide
+    whether a cached toolchain applies. Returns ``(core_version, manifest)``.
+    """
+    source = Path(source)
+    version = _core_version(source)
+    if not version:
+        raise Problem("Cannot determine the Drupal 10 core version from composer.lock")
+    manifest = json.loads((source / "composer.json").read_text())
+    lock = json.loads((source / "composer.lock").read_text())
+    core_dev = next(
+        (item for item in lock.get("packages-dev", []) if item.get("name") == "drupal/core-dev"),
+        {},
+    )
+    for package, constraint in core_dev.get("require", {}).items():
+        if (
+            package.startswith("phpstan/")
+            or package == "mglaman/phpstan-drupal"
+            or package in manifest.get("require", {})
+        ):
+            continue
+        manifest.setdefault("require-dev", {}).setdefault(package, constraint)
+    # The disposable scanner toolchain must not inherit obsolete PHPStan
+    # development pins from the application. Upgrade Status/Rector resolve
+    # their compatible analysis dependencies together below.
+    for package in ANALYSIS_PACKAGES:
+        manifest.get("require-dev", {}).pop(package, None)
+        manifest.get("require", {}).pop(package, None)
+    for package in ("drupal/core", "drupal/core-recommended"):
+        if package in manifest.get("require", {}):
+            manifest["require"][package] = version
+    for package in read_locked_packages(source):
+        if package["name"] in manifest.get("require", {}) and package["name"] not in ANALYSIS_PACKAGES:
+            manifest["require"][package["name"]] = package["version"]
+    for package in ANALYSIS_PACKAGES:
+        manifest.get("require", {}).pop(package, None)
+    # Drupal Finder is part of the analysis toolchain as well as Drush.
+    # Old application pins can prevent PHPStan Drupal 2 from resolving.
+    manifest.setdefault("require", {})["webflo/drupal-finder"] = "^1.3.1"
+    manifest["require"]["composer/installers"] = "^2.3"
+    manifest.setdefault("require-dev", {}).update(
+        {"drupal/upgrade_status": "^4.3", "palantirnet/drupal-rector": "^1.1"}
+    )
+    plugins = {
+        item["name"]: False
+        for item in lock.get("packages", []) + lock.get("packages-dev", [])
+        if item.get("type") == "composer-plugin"
+    }
+    plugins["composer/installers"] = True
+    # Do not add a wildcard: canonical JSON sorts "*" first and Composer
+    # applies the first matching rule, which would disable the installer.
+    manifest.setdefault("config", {})["allow-plugins"] = plugins
+    return version, manifest
+
+
+def _stack_cache_available(stack_dir, manifest):
+    """True when a cached toolchain resolved from this exact manifest exists."""
+    marker = stack_dir / STACK_MANIFEST_MARKER
+    return (
+        (stack_dir / "vendor").is_dir()
+        and (stack_dir / "composer.lock").is_file()
+        and marker.is_file()
+        and marker.read_text().strip() == digest(manifest)
+    )
+
+
 def _tune_analysis_tools(site_dir: Path) -> None:
     """Tune scanner configurations for parallel multi-core performance."""
     cpu_count = min(os.cpu_count() or 4, 8)
@@ -245,6 +333,111 @@ def _tune_analysis_tools(site_dir: Path) -> None:
                 neon_file.write_text(tuned, encoding="utf-8")
         except Exception:
             pass
+
+
+def _stack_cache_restore(site, stack_dir, manifest):
+    """Restore a cached scanner toolchain (vendor + composer.lock) into the analysis copy.
+
+    A hit requires the cache to have been resolved from an identical generated manifest;
+    the stack key alone (source lock, database, profile, custom roots) does not cover
+    manifest edits that leave composer.lock untouched. Returns True on a usable hit.
+    """
+    cache_vendor = stack_dir / "vendor"
+    cache_lock = stack_dir / "composer.lock"
+    marker = stack_dir / STACK_MANIFEST_MARKER
+    if not (cache_vendor.is_dir() and cache_lock.is_file() and marker.is_file()):
+        return False
+    if marker.read_text().strip() != digest(manifest):
+        return False
+    if (site / "vendor").exists():
+        return False
+    try:
+        shutil.copytree(cache_vendor, site / "vendor", symlinks=True)
+        shutil.copy(cache_lock, site / "composer.lock")
+        return True
+    except Exception:
+        shutil.rmtree(site / "vendor", ignore_errors=True)
+        return False
+
+
+def _stack_cache_store(site, stack_dir, manifest):
+    """Cache the freshly resolved toolchain for the next run with the same stack key."""
+    if not (site / "vendor").is_dir() or not (site / "composer.lock").is_file():
+        return False
+    try:
+        stack_dir.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(stack_dir / "vendor", ignore_errors=True)
+        shutil.copytree(site / "vendor", stack_dir / "vendor", symlinks=True)
+        shutil.copy(site / "composer.lock", stack_dir / "composer.lock")
+        (stack_dir / STACK_MANIFEST_MARKER).write_text(digest(manifest) + "\n")
+        return True
+    except Exception:
+        shutil.rmtree(stack_dir / "vendor", ignore_errors=True)
+        return False
+
+
+def _spawn_detached(argv, cwd):
+    """Start a fire-and-forget process and return its pid (patchable seam for tests)."""
+    return subprocess.Popen(
+        argv,
+        cwd=cwd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    ).pid
+
+
+def _detach_teardown(runtime_dir, stack_dir, project):
+    """Tear the analysis stack down without making the run wait for Docker.
+
+    The compose file and env file are relocated under the stack cache because the
+    analysis copy is deleted right after; ``pending.json`` lets the next run with the
+    same project name finish this teardown first.
+    """
+    keep = stack_dir / "teardown"
+    keep.mkdir(parents=True, exist_ok=True)
+    compose = read(runtime_dir / "compose.json")
+    env_copy = keep / "runtime.env"
+    shutil.copy(runtime_dir / "runtime.env", env_copy)
+    os.chmod(env_copy, 0o600)
+    for service in compose.get("services", {}).values():
+        if "env_file" in service:
+            service["env_file"] = [str(env_copy)]
+    write(keep / "compose.json", compose)
+    argv = ["docker", "compose", "-p", project, "-f", str(keep / "compose.json"), "down", "--remove-orphans"]
+    pid = _spawn_detached(argv, keep)
+    write(keep / "pending.json", {"project": project, "argv": argv, "pid": pid, "startedAt": now()})
+    return {"step": "teardown", "status": "detached", "pid": pid, "argv": argv}
+
+
+COMPOSE_PROJECT_PATTERN = re.compile(r"^d11-stack-[A-Za-z0-9_-]{1,8}-[0-9a-f]{10}$")
+
+
+def _finish_previous_teardown(stack_dir):
+    """Complete a teardown detached by an earlier run before its project name is reused.
+
+    ``docker compose down`` is idempotent, so this is quick when the detached process
+    already finished and correct when it did not. The command is rebuilt from the
+    validated project name rather than replayed from the marker file, the relocated
+    compose/env files are removed afterwards, and nothing here can fail the audit.
+    """
+    keep = stack_dir / "teardown"
+    pending = keep / "pending.json"
+    if not pending.is_file():
+        return None
+    result = {"step": "finish_previous_teardown", "status": "tool_failure"}
+    try:
+        project = str(read(pending).get("project") or "")
+        if not COMPOSE_PROJECT_PATTERN.match(project) or not (keep / "compose.json").is_file():
+            raise Problem("Pending teardown marker is not usable")
+        argv = ["docker", "compose", "-p", project, "-f", str(keep / "compose.json"), "down", "--remove-orphans"]
+        record = command(argv, keep, 600)
+        result.update(status=record.get("status"), project=project)
+    except Exception as exc:
+        result["error"] = str(exc)
+    finally:
+        shutil.rmtree(keep, ignore_errors=True)
+    return result
 
 
 def _analysis_compose(site, runtime, project, profile=None):
@@ -694,12 +887,26 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
     stack_key = compute_stack_key(context, cfg, source)
     clean_pid = re.sub(r"[^a-zA-Z0-9_-]", "", str(pid))[:8] or "run"
     project = f"d11-stack-{clean_pid}-{stack_key[:10]}"
+    stack_dir = get_d11_home() / "cache" / "stacks" / stack_key
     prof = get_profile(cfg.get("runtimeProfile"))
-    before = inventory(source)
+    # Timed phases: recorded in analysis-runtime.json and emitted as ``span`` events so
+    # run time outside subprocesses (copying, hashing, cleanup) is attributable too.
+    spans = []
+    emit = (lambda **rec: workflow.event(out, "span", **rec)) if workflow is not None else None
+
+    def timed(step, **extra):
+        return span(step, emit, spans, **extra)
+
+    with timed("inventory_before"):
+        before = inventory(source)
     checks = []
     lifecycle = []
     prefix = None
     try:
+        with timed("finish_previous_teardown"):
+            previous_teardown = _finish_previous_teardown(stack_dir)
+        if previous_teardown:
+            lifecycle.append(previous_teardown)
         excluded = []
         for extension in context.get("extensions", []):
             if (
@@ -713,7 +920,11 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
                     )
                 except ValueError:
                     pass
-        _copy_analysis(source, site, excluded)
+        refresh = cfg.get("refresh", False) or cfg.get("refresh_stack", False)
+        version, manifest = _analysis_manifest(source)
+        cache_ready = not refresh and _stack_cache_available(stack_dir, manifest)
+        with timed("copy_analysis", vendorCopied=not cache_ready):
+            _copy_analysis(source, site, excluded, include_vendor=not cache_ready)
         lifecycle.append(
             {
                 "step": "copy",
@@ -721,109 +932,63 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
                 "at": now(),
                 "sourceHash": digest(before),
                 "excludedUninstalledCustomThemes": excluded,
+                "vendorCopied": not cache_ready,
             }
         )
-        version = _core_version(site)
-        if not version:
-            raise Problem("Cannot determine the Drupal 10 core version from composer.lock")
-        manifest = json.loads((site / "composer.json").read_text())
-        lock = json.loads((site / "composer.lock").read_text())
-        core_dev = next(
-            (
-                item
-                for item in lock.get("packages-dev", [])
-                if item.get("name") == "drupal/core-dev"
-            ),
-            {},
-        )
-        for package, constraint in core_dev.get("require", {}).items():
-            if (
-                package.startswith("phpstan/")
-                or package == "mglaman/phpstan-drupal"
-                or package in manifest.get("require", {})
-            ):
-                continue
-            manifest.setdefault("require-dev", {}).setdefault(package, constraint)
-        # The disposable scanner toolchain must not inherit obsolete PHPStan
-        # development pins from the application. Upgrade Status/Rector resolve
-        # their compatible analysis dependencies together below.
-        ANALYSIS_PACKAGES = (
-            "phpstan/phpstan",
-            "mglaman/phpstan-drupal",
-            "mglaman/drupal-check",
-            "drupal/core-dev",
-            "drupal/upgrade_status",
-            "palantirnet/drupal-rector",
-        )
-        for package in ANALYSIS_PACKAGES:
-            manifest.get("require-dev", {}).pop(package, None)
-            manifest.get("require", {}).pop(package, None)
-        for package in ("drupal/core", "drupal/core-recommended"):
-            if package in manifest.get("require", {}):
-                manifest["require"][package] = version
-        for package in read_locked_packages(site):
-            if package["name"] in manifest.get("require", {}) and package["name"] not in ANALYSIS_PACKAGES:
-                manifest["require"][package["name"]] = package["version"]
-        for package in ANALYSIS_PACKAGES:
-            manifest.get("require", {}).pop(package, None)
-        # Drupal Finder is part of the analysis toolchain as well as Drush.
-        # Old application pins can prevent PHPStan Drupal 2 from resolving.
-        manifest.setdefault("require", {})["webflo/drupal-finder"] = "^1.3.1"
-        manifest["require"]["composer/installers"] = "^2.3"
-        manifest.setdefault("require-dev", {}).update(
-            {"drupal/upgrade_status": "^4.3", "palantirnet/drupal-rector": "^1.1"}
-        )
-        plugins = {
-            item["name"]: False
-            for item in lock.get("packages", []) + lock.get("packages-dev", [])
-            if item.get("type") == "composer-plugin"
-        }
-        plugins["composer/installers"] = True
-        # Do not add a wildcard: canonical JSON sorts "*" first and Composer
-        # applies the first matching rule, which would disable the installer.
-        manifest.setdefault("config", {})["allow-plugins"] = plugins
         write(site / "composer.json", manifest)
-        stack_dir = get_d11_home() / "cache" / "stacks" / stack_key
-        cache_vendor = stack_dir / "vendor"
-        cache_lock = stack_dir / "composer.lock"
-        refresh = cfg.get("refresh", False) or cfg.get("refresh_stack", False)
-        if not refresh and cache_vendor.is_dir() and cache_lock.is_file():
-            if not (site / "vendor").exists():
-                try:
-                    shutil.copytree(cache_vendor, site / "vendor", symlinks=True)
-                except Exception:
-                    pass
-
         composer_cache = get_d11_home() / "cache" / "composer"
         composer_cache.mkdir(parents=True, exist_ok=True)
-        install = command(
-            [
-                "docker",
-                "run",
-                "--rm",
-                "--entrypoint",
-                "composer",
-                "-u",
-                f"{os.getuid()}:{os.getgid()}",
-                "-v",
-                f"{site}:/var/www",
-                "-v",
-                f"{composer_cache}:/tmp/composer-cache",
-                "-e",
-                "COMPOSER_CACHE_DIR=/tmp/composer-cache",
-                "-w",
-                "/var/www",
-                prof["images"]["cli"],
-                "update",
-                "--with-all-dependencies",
-                "--no-scripts",
-                "--no-interaction",
-            ],
-            analysis,
-            1800,
-        )
+        # Reuse the resolved scanner toolchain when this exact generated manifest was
+        # resolved before (composer install onto the restored vendor); otherwise the
+        # copied application vendor is updated with the toolchain delta.
+        cache_hit = cache_ready and _stack_cache_restore(site, stack_dir, manifest)
+
+        def composer_run(*args):
+            return command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--entrypoint",
+                    "composer",
+                    "-u",
+                    f"{os.getuid()}:{os.getgid()}",
+                    "-v",
+                    f"{site}:/var/www",
+                    "-v",
+                    f"{composer_cache}:/tmp/composer-cache",
+                    "-e",
+                    "COMPOSER_CACHE_DIR=/tmp/composer-cache",
+                    "-w",
+                    "/var/www",
+                    prof["images"]["cli"],
+                    *args,
+                    "--no-scripts",
+                    "--no-interaction",
+                ],
+                analysis,
+                1800,
+            )
+
+        fallback = False
+        with timed("install_tools", stackCache="hit" if cache_hit else "miss"):
+            if cache_hit:
+                install = composer_run("install")
+                if install.get("exitCode") != 0:
+                    # A stale or damaged cache must never fail the audit: resolve from scratch.
+                    fallback = True
+                    cache_hit = False
+                    shutil.rmtree(site / "vendor", ignore_errors=True)
+                    shutil.rmtree(stack_dir / "vendor", ignore_errors=True)
+            if not cache_hit:
+                install = composer_run("update", "--with-all-dependencies")
         lifecycle.append(
-            {"step": "install_tools", "status": install.get("status"), "command": install}
+            {
+                "step": "install_tools",
+                "status": install.get("status"),
+                "stackCache": "hit" if cache_hit else ("fallback" if fallback else "miss"),
+                "command": install,
+            }
         )
         if install.get("exitCode") != 0:
             checks = [
@@ -841,20 +1006,16 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
                 ),
             ]
             return checks
-        if (site / "vendor").is_dir() and not cache_vendor.is_dir():
-            try:
-                stack_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(site / "vendor", cache_vendor, symlinks=True)
-                if (site / "composer.lock").is_file():
-                    shutil.copy(site / "composer.lock", cache_lock)
-            except Exception:
-                pass
+        if not cache_hit:
+            _stack_cache_store(site, stack_dir, manifest)
         _tune_analysis_tools(site)
         prefix = _analysis_compose(site, runtime, project, profile=prof)
-        _checked(prefix + ["up", "-d"], analysis, 600)
+        with timed("stack_up"):
+            _checked(prefix + ["up", "-d"], analysis, 600)
         # Reload the newly resolved installer plugin before regenerating paths;
         # copied vendor metadata can otherwise retain default library paths.
-        _checked(
+        with timed("dump_autoload"):
+            _checked(
             prefix
             + [
                 "exec",
@@ -871,26 +1032,28 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
             120,
         )
         # Rector does not depend on Drupal bootstrap or the imported database.
-        checks.append(_run_rector(prefix, analysis, context, source))
-        for _ in range(60):
-            ready = command(
-                prefix
-                + [
-                    "exec",
-                    "-T",
-                    "db",
-                    "sh",
-                    "-c",
-                    'MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" -Nse "SELECT 1"',
-                ],
-                analysis,
-                10,
-            )
-            if ready.get("exitCode") == 0:
-                break
-            time.sleep(1)
-        else:
-            raise Problem("Disposable analysis database did not become ready")
+        with timed("rector"):
+            checks.append(_run_rector(prefix, analysis, context, source))
+        with timed("db_ready"):
+            for _ in range(60):
+                ready = command(
+                    prefix
+                    + [
+                        "exec",
+                        "-T",
+                        "db",
+                        "sh",
+                        "-c",
+                        'MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" -Nse "SELECT 1"',
+                    ],
+                    analysis,
+                    10,
+                )
+                if ready.get("exitCode") == 0:
+                    break
+                time.sleep(1)
+            else:
+                raise Problem("Disposable analysis database did not become ready")
         database = Path(cfg.get("recovery", {}).get("database", ""))
         if not database.is_file():
             raise Problem("Sanitized recovery database is unavailable for disposable analysis")
@@ -920,7 +1083,8 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
                 {"step": "import_sanitized_database", "status": "passed", "reused": True}
             )
         else:
-            imported = _import_database(prefix, analysis, database)
+            with timed("import_database"):
+                imported = _import_database(prefix, analysis, database)
             lifecycle.append(
                 {"step": "import_sanitized_database", "status": imported["status"], "command": imported}
             )
@@ -955,7 +1119,8 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
         root_expression = (
             "base64_decode('" + base64.b64encode(container_root.encode()).decode() + "')"
         )
-        autoload = command(
+        with timed("analysis_autoload"):
+            autoload = command(
             prefix
             + [
                 "exec",
@@ -975,7 +1140,8 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
         )
         if autoload.get("exitCode") != 0:
             raise Problem("Analysis Drupal autoload failed; inspect analysis-runtime.json")
-        probe = command(
+        with timed("analysis_bootstrap"):
+            probe = command(
             drush
             + [
                 "php:eval",
@@ -1007,11 +1173,12 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
             raise Problem(
                 "Analysis Drupal bootstrap or database identity check failed; inspect analysis-runtime.json (analysis_bootstrap)"
             )
-        _checked(
-            drush + ["pm:enable", "upgrade_status", "--yes", "--uri=" + cfg["site"]["uri"]],
-            analysis,
-            600,
-        )
+        with timed("enable_upgrade_status"):
+            _checked(
+                drush + ["pm:enable", "upgrade_status", "--yes", "--uri=" + cfg["site"]["uri"]],
+                analysis,
+                600,
+            )
         us_version = _checked(
             drush
             + [
@@ -1036,7 +1203,8 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
         if fast:
             us_args.append("--ignore-contrib")
         us_args.append("--uri=" + cfg["site"]["uri"])
-        checks.append(
+        with timed("upgrade_status", ignoreContrib=bool(fast)):
+            checks.append(
             _upgrade_record(
                 command(
                     us_args,
@@ -1047,7 +1215,8 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
             )
         )
         impact_php = """$providers=[]; foreach (\\Drupal::service("plugin.manager.field.field_type")->getDefinitions() as $id=>$definition) {$providers[$id]=$definition["provider"]??NULL;} $modules=[]; foreach (\\Drupal::entityTypeManager()->getStorage("field_storage_config")->loadMultiple() as $storage) {$provider=$providers[$storage->getType()]??NULL; if (!$provider) continue; $entry=&$modules[$provider]; if (!$entry) $entry=["fieldProviders"=>[],"populatedContent"=>FALSE,"populatedCounts"=>[]]; $entity=$storage->getTargetEntityTypeId(); $field=$storage->getName(); $entry["fieldProviders"][]=$entity.".".$field; try {$query=\\Drupal::entityQuery($entity)->accessCheck(FALSE)->exists($field)->count(); $count=(int)$query->execute(); $entry["populatedCounts"][$entity.".".$field]=$count; if ($count>0) $entry["populatedContent"]=TRUE;} catch (\\Throwable $e) {$entry["populatedContent"]=NULL;}} echo json_encode(["modules"=>$modules]);"""
-        checks.append(
+        with timed("module_impact"):
+            checks.append(
             _impact_record(
                 command(
                     drush + ["php:eval", impact_php, "--uri=" + cfg["site"]["uri"]], analysis, 600
@@ -1070,18 +1239,32 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
             )
     finally:
         refresh = cfg.get("refresh", False) or cfg.get("refresh_stack", False)
-        if prefix:
-            down_cmd = (
-                prefix + ["down", "-v", "--remove-orphans"]
-                if refresh
-                else prefix + ["down", "--remove-orphans"]
-            )
-            lifecycle.append(
-                {
-                    "step": "teardown",
-                    "status": command(down_cmd, analysis, 600).get("status"),
-                }
-            )
+        if prefix and refresh:
+            # Volumes are removed too; this must finish before the stack cache is deleted.
+            with timed("teardown"):
+                lifecycle.append(
+                    {
+                        "step": "teardown",
+                        "status": command(
+                            prefix + ["down", "-v", "--remove-orphans"], analysis, 600
+                        ).get("status"),
+                    }
+                )
+        elif prefix:
+            # Evidence is complete here; the operator should not wait for Docker to stop.
+            with timed("teardown", detached=True):
+                try:
+                    lifecycle.append(_detach_teardown(runtime, stack_dir, project))
+                except Exception as exc:
+                    lifecycle.append(
+                        {
+                            "step": "teardown",
+                            "status": command(
+                                prefix + ["down", "--remove-orphans"], analysis, 600
+                            ).get("status"),
+                            "detachError": str(exc),
+                        }
+                    )
         if refresh:
             try:
                 stack_dir = get_d11_home() / "cache" / "stacks" / stack_key
@@ -1089,7 +1272,8 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
                     shutil.rmtree(stack_dir, ignore_errors=True)
             except Exception:
                 pass
-        after = inventory(source)
+        with timed("inventory_after"):
+            after = inventory(source)
         unchanged = before == after
         lifecycle.append(
             {
@@ -1107,6 +1291,9 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
                     "candidate_contamination",
                 )
             )
+        if analysis.exists():
+            with timed("cleanup_analysis_copy"):
+                shutil.rmtree(analysis, ignore_errors=True)
         write(
             out / "analysis-runtime.json",
             {
@@ -1116,9 +1303,8 @@ def run(cfg, context, out, workflow=None, pid=None, fast: bool = True):
                 "scanMode": "fast" if fast else "full",
                 "candidateUnchanged": unchanged,
                 "lifecycle": lifecycle,
+                "spans": spans,
             },
         )
-        if analysis.exists():
-            shutil.rmtree(analysis, ignore_errors=True)
         write(out / "audit-tools.json", {"mode": "disposable", "checks": checks})
     return checks

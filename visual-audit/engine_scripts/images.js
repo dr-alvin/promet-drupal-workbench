@@ -18,10 +18,21 @@ async function readiness(page,s){
     try {
       if(window.jQuery) window.jQuery(window).off('scroll.views_infinite_scroll');
     } catch{}
+    // Resolve lazy-loader attributes ourselves, sources first, so the browser picks the
+    // final candidate on the first load. Leaving <picture><source data-srcset> to the
+    // page's lazy loader made the chosen variant (and the rendered height) depend on
+    // whether that swap won the race against the screenshot.
+    document.querySelectorAll('picture source').forEach(source=>{
+      if(source.dataset.srcset && !source.getAttribute('srcset')) source.setAttribute('srcset',source.dataset.srcset);
+      if(source.dataset.sizes && source.dataset.sizes!=='auto' && !source.getAttribute('sizes')) source.setAttribute('sizes',source.dataset.sizes);
+    });
     document.querySelectorAll('img').forEach(img=>{
       img.loading='eager';
-      if(img.dataset.src && !img.src) img.src=img.dataset.src;
+      if(img.dataset.sizes && img.dataset.sizes!=='auto' && !img.getAttribute('sizes')) img.setAttribute('sizes',img.dataset.sizes);
       if(img.dataset.srcset && !img.srcset) img.srcset=img.dataset.srcset;
+      if(img.dataset.src && !img.src) img.src=img.dataset.src;
+      // Hand-off from lazysizes: it must not re-process (and re-select) these later.
+      if(img.classList.contains('lazyload')){img.classList.remove('lazyload');img.classList.add('lazyloaded');}
     });
     if(window.lazySizes?.loader?.checkElems) window.lazySizes.loader.checkElems();
   });
