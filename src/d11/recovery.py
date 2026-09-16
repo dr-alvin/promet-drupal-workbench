@@ -202,7 +202,7 @@ def restore(w, pid, out):
                 if parent_dir.is_dir():
                     for sub in parent_dir.iterdir():
                         if (sub / ".git").is_dir():
-                            subprocess.run(["git", "-C", str(sub), "checkout", "--", "."], capture_output=True)
+                            subprocess.run(["git", "-C", str(sub), "reset", "--hard", "HEAD"], capture_output=True)
                             subprocess.run(["git", "-C", str(sub), "clean", "-fd"], capture_output=True)
 
             def _get_composer_base():
@@ -275,16 +275,16 @@ def restore(w, pid, out):
                             capture_output=True,
                         )
 
-                # Restore composer.json to exact pre-upgrade state and clean any untracked artifacts
+                # Restore working tree to exact pre-upgrade state and clean any untracked artifacts
                 if git_head:
                     subprocess.run(
-                        ["git", "checkout", git_head, "--", "composer.json"],
+                        ["git", "reset", "--hard", git_head],
                         cwd=source_dir,
                         capture_output=True,
                     )
                 else:
                     subprocess.run(
-                        ["git", "checkout", orig_branch, "--", "composer.json"],
+                        ["git", "reset", "--hard"],
                         cwd=source_dir,
                         capture_output=True,
                     )
@@ -300,7 +300,58 @@ def restore(w, pid, out):
                 msg = "\n".join(error_lines[-15:]) if error_lines else full_out[-500:]
                 raise Problem(f"Rollback composer install failed (exit {comp.returncode}): {msg}")
         db_file = target / "database.sql.gz"
-        if db_file.is_file() and draft.is_dir() and (draft / "runtime.json").is_file():
+        if (wrapper == "ddev" or (source_dir / ".ddev").is_dir()) and (source_dir / ".ddev/config.yaml").is_file():
+            r_db = subprocess.run(
+                ["ddev", "import-db", f"--file={db_file}"],
+                cwd=source_dir,
+                capture_output=True,
+                text=True,
+                errors="replace",
+            )
+            if r_db.returncode != 0:
+                raise Problem(f"ddev import-db failed (exit {r_db.returncode}): {r_db.stderr or r_db.stdout}")
+            subprocess.run(
+                ["ddev", "drush", "cr"], cwd=source_dir, capture_output=True, text=True, errors="replace"
+            )
+        elif (wrapper in ("fin", "docksal") or (source_dir / ".docksal").is_dir()) and ((source_dir / ".docksal/docksal.env").is_file() or (source_dir / ".docksal").is_dir()):
+            if str(db_file).endswith(".gz"):
+                p_decomp = subprocess.Popen(["gunzip", "-c", str(db_file)], stdout=subprocess.PIPE)
+                r_db = subprocess.run(
+                    ["fin", "db", "import"],
+                    cwd=source_dir,
+                    stdin=p_decomp.stdout,
+                    capture_output=True,
+                )
+                p_decomp.stdout.close()
+                p_decomp.wait()
+            else:
+                with open(db_file, "rb") as f_in:
+                    r_db = subprocess.run(
+                        ["fin", "db", "import"],
+                        cwd=source_dir,
+                        stdin=f_in,
+                        capture_output=True,
+                    )
+            if r_db.returncode != 0:
+                err_txt = r_db.stderr.decode(errors="replace") if isinstance(r_db.stderr, bytes) else str(r_db.stderr or "")
+                raise Problem(f"fin db import failed (exit {r_db.returncode}): {err_txt}")
+            subprocess.run(
+                ["fin", "drush", "cr"], cwd=source_dir, capture_output=True, text=True, errors="replace"
+            )
+        elif (wrapper == "lando" or any((source_dir / f).is_file() for f in (".lando.yml", ".lando.yaml"))) and any((source_dir / f).is_file() for f in (".lando.yml", ".lando.yaml")):
+            r_db = subprocess.run(
+                ["lando", "db-import", str(db_file)],
+                cwd=source_dir,
+                capture_output=True,
+                text=True,
+                errors="replace",
+            )
+            if r_db.returncode != 0:
+                raise Problem(f"lando db-import failed (exit {r_db.returncode}): {r_db.stderr or r_db.stdout}")
+            subprocess.run(
+                ["lando", "drush", "cr"], cwd=source_dir, capture_output=True, text=True, errors="replace"
+            )
+        elif db_file.is_file() and draft.is_dir() and (draft / "runtime.json").is_file():
             cp = prefix(draft)
             with gzip.open(db_file, "rb") as data:
                 proc = subprocess.Popen(
@@ -325,58 +376,6 @@ def restore(w, pid, out):
                 code = proc.wait()
                 if code != 0:
                     raise Problem(f"Database restore failed with exit code {code}: {err.decode(errors='replace')[-500:]}")
-        else:
-            if (wrapper == "ddev" or (source_dir / ".ddev").is_dir()) and (source_dir / ".ddev/config.yaml").is_file():
-                r_db = subprocess.run(
-                    ["ddev", "import-db", f"--file={db_file}"],
-                    cwd=source_dir,
-                    capture_output=True,
-                    text=True,
-                    errors="replace",
-                )
-                if r_db.returncode != 0:
-                    raise Problem(f"ddev import-db failed (exit {r_db.returncode}): {r_db.stderr or r_db.stdout}")
-                subprocess.run(
-                    ["ddev", "drush", "cr"], cwd=source_dir, capture_output=True, text=True, errors="replace"
-                )
-            elif (wrapper in ("fin", "docksal") or (source_dir / ".docksal").is_dir()) and ((source_dir / ".docksal/docksal.env").is_file() or (source_dir / ".docksal").is_dir()):
-                if str(db_file).endswith(".gz"):
-                    p_decomp = subprocess.Popen(["gunzip", "-c", str(db_file)], stdout=subprocess.PIPE)
-                    r_db = subprocess.run(
-                        ["fin", "db", "import"],
-                        cwd=source_dir,
-                        stdin=p_decomp.stdout,
-                        capture_output=True,
-                    )
-                    p_decomp.stdout.close()
-                    p_decomp.wait()
-                else:
-                    with open(db_file, "rb") as f_in:
-                        r_db = subprocess.run(
-                            ["fin", "db", "import"],
-                            cwd=source_dir,
-                            stdin=f_in,
-                            capture_output=True,
-                        )
-                if r_db.returncode != 0:
-                    err_txt = r_db.stderr.decode(errors="replace") if isinstance(r_db.stderr, bytes) else str(r_db.stderr or "")
-                    raise Problem(f"fin db import failed (exit {r_db.returncode}): {err_txt}")
-                subprocess.run(
-                    ["fin", "drush", "cr"], cwd=source_dir, capture_output=True, text=True, errors="replace"
-                )
-            elif (wrapper == "lando" or any((source_dir / f).is_file() for f in (".lando.yml", ".lando.yaml"))) and any((source_dir / f).is_file() for f in (".lando.yml", ".lando.yaml")):
-                r_db = subprocess.run(
-                    ["lando", "db-import", str(db_file)],
-                    cwd=source_dir,
-                    capture_output=True,
-                    text=True,
-                    errors="replace",
-                )
-                if r_db.returncode != 0:
-                    raise Problem(f"lando db-import failed (exit {r_db.returncode}): {r_db.stderr or r_db.stdout}")
-                subprocess.run(
-                    ["lando", "drush", "cr"], cwd=source_dir, capture_output=True, text=True, errors="replace"
-                )
 
         bootstrap_ok = True
         drush_check = None

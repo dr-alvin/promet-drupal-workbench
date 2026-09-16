@@ -322,21 +322,24 @@ def prerequisites(cfg, p, approval):
     ev = Path(cfg["_config"]).parent / p["requirementsEvidence"]
     if not ev.is_file() or file_hash(ev) != p.get("requirementsHash"):
         raise Problem("Release requirements evidence changed")
-    baseline_file = Path(cfg["_config"]).parent / p["baselineEvidence"]
-    if not baseline_file.is_file() or file_hash(baseline_file) != p.get("baselineHash"):
-        raise Problem("Baseline evidence changed")
-    baseline = read(baseline_file)
-    schema(baseline, "baseline")
-    if baseline.get("environment") != p["environment"] or baseline.get("site") != p["site"]:
-        raise Problem("Baseline environment/site mismatch")
-    for field in ("codeRevision", "installedExtensions", "activeConfiguration", "publicScenarios"):
-        if not baseline.get(field):
-            raise Problem("Missing baseline evidence: " + field)
-    capture_file = relative(baseline_file.parent, baseline.get("captureSettings", ""))
-    if not capture_file.is_file() or read(capture_file).get("stable") is not True:
-        raise Problem("Missing stable before-capture evidence")
-    if file_hash(capture_file) != baseline.get("captureSettingsHash"):
-        raise Problem("Baseline capture settings changed")
+    if p.get("baselineEvidence"):
+        baseline_file = Path(cfg["_config"]).parent / p["baselineEvidence"]
+        if not baseline_file.is_file() or file_hash(baseline_file) != p.get("baselineHash"):
+            raise Problem("Baseline evidence changed")
+        baseline = read(baseline_file)
+        schema(baseline, "baseline")
+        if baseline.get("environment") != p["environment"] or baseline.get("site") != p["site"]:
+            raise Problem("Baseline environment/site mismatch")
+        for field in ("codeRevision", "installedExtensions", "activeConfiguration", "publicScenarios"):
+            if not baseline.get(field):
+                raise Problem("Missing baseline evidence: " + field)
+        capture_file = relative(baseline_file.parent, baseline.get("captureSettings", ""))
+        if not capture_file.is_file() or read(capture_file).get("stable") is not True:
+            raise Problem("Missing stable before-capture evidence")
+        if file_hash(capture_file) != baseline.get("captureSettingsHash"):
+            raise Problem("Baseline capture settings changed")
+    elif not (cfg.get("baselineDeferred") or cfg.get("fast") or p.get("purpose") == "preparation"):
+        raise Problem("Missing required baseline evidence")
     requirements = read(ev)
     schema(requirements, "requirements")
     version = re.match(r"^(\d+)\.(\d+)\.(\d+)", p["source"])

@@ -280,7 +280,15 @@ function choose(pid){
   decisionView.expandedRows.clear();
  }
  syncTerminalWithProject(true);
+ const safetyTimer = setTimeout(() => {
+  const overlay = $('project-loading-overlay');
+  if(overlay && !overlay.hidden) {
+   overlay.hidden = true;
+   console.warn(`Project loading overlay timed out after 10s for ${pid}`);
+  }
+ }, 10000);
  refresh().catch(error).finally(() => {
+  clearTimeout(safetyTimer);
   const overlay = $('project-loading-overlay');
   if(overlay) overlay.hidden = true;
  });

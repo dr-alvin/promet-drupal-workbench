@@ -6,6 +6,7 @@ from .auto_remediate import generate_remediation_proposals
 from .common import Problem, read, write
 from .compatibility import OBSOLETE_PERFORMANCE_MODULES, PROVUS_ECOSYSTEM_MODULES, REMOVED_CORE_TO_CONTRIB, is_provus_project, semver_match, version_tuple
 from .knowledge import get_obsolete_modules, get_replacements
+from .patches import is_d11_compatible
 from .two_gate import compatibility_report, decide
 
 
@@ -97,6 +98,7 @@ def rule_provus_ecosystem(ext: dict, ctx: dict) -> dict | None:
     rc_candidates = [rc.get("version") for rc in ext.get("releaseCandidates", []) if rc.get("version")]
     is_clean = ctx["is_clean"]
     accept_prereleases = ctx["accept_prereleases"]
+    manual_proposal = ctx.get("manual_proposal")
 
     if is_clean:
         return {
@@ -121,6 +123,39 @@ def rule_provus_ecosystem(ext: dict, ctx: dict) -> dict | None:
             "candidateVersion": candidate_version,
             "acceptRisk": accept_prereleases,
             "note": "Provus ecosystem dependency — retained in vendor; update to D11-compatible release",
+            "origin": "automatic",
+        }
+
+    # If a manual/AI remediation proposal exists (e.g. custom Provus code like promet_provus_blocks), use it!
+    if manual_proposal and manual_proposal.is_file():
+        proposal = read(manual_proposal)
+        return {
+            "name": name,
+            "action": proposal.get("action", "ai_manual_patch") if ext.get("recommendedAction") == "ai_manual_patch" else "manual_remediation",
+            "candidateId": proposal.get("candidateId"),
+            "candidateVersion": None,
+            "acceptRisk": True,
+            "note": "Provus ecosystem component with validated remediation proposal",
+            "origin": "automatic",
+        }
+
+    # If an uninstalled contrib module has no D11 release and no manual proposal,
+    # and its coreConstraint conflicts with Drupal 11, allow cleanup to remove it
+    # so Composer can upgrade core.
+    if (
+        ext.get("installed") is False
+        and ext.get("exported") is False
+        and ext.get("coreConstraint")
+        and not is_d11_compatible(ext.get("coreConstraint"))
+        and not candidate_version
+    ):
+        return {
+            "name": name,
+            "action": "remove",
+            "candidateId": None,
+            "candidateVersion": None,
+            "acceptRisk": False,
+            "note": "Uninstalled Provus dependency with no D11 release removed for Drupal 11 alignment",
             "origin": "automatic",
         }
 
@@ -486,8 +521,10 @@ def auto_decide(w, rid: str, accept_prereleases: bool = True, auto_remediate: bo
         manual_proposal = out / "manual-patches" / name / "proposal.json"
         existing = existing_decisions.get(name)
 
+        core_compat = is_d11_compatible(ext.get("coreConstraint")) if ext.get("coreConstraint") else True
         is_clean = (
             ext.get("status") == "ready"
+            and core_compat
             and not ext.get("upgradeStatus", {}).get("issueCount")
             and not ext.get("rector", {}).get("fixableCount")
         )

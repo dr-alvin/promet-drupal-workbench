@@ -292,7 +292,18 @@ def main():
                 a.command,
                 "/config/" + config.name,
             ]
-            code = subprocess.call(cmd, env=env)
+            try:
+                proc = subprocess.run(cmd, env=env, timeout=300)
+                code = proc.returncode
+            except subprocess.TimeoutExpired:
+                print("Visual audit container timed out after 300 seconds", file=sys.stderr)
+                subprocess.run(
+                    prefix + ["down", "--timeout", "5"],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                code = 2
             write(
                 out / "launcher-metrics.json",
                 {

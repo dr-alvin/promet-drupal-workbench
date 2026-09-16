@@ -618,10 +618,13 @@ def create_app(home=None, port=8765):
 
     @app.post("/api/runs/{rid}/compatibility-decisions")
     async def compatibility_decisions(rid, request: Request):
-        return service.compatibility_decisions(rid, await request.json())
+        from starlette.concurrency import run_in_threadpool
+        payload = await request.json()
+        return await run_in_threadpool(service.compatibility_decisions, rid, payload)
 
     @app.post("/api/runs/{rid}/auto-resolve")
     async def auto_resolve(rid, request: Request):
+        from starlette.concurrency import run_in_threadpool
         body = (
             await request.json()
             if (
@@ -634,11 +637,14 @@ def create_app(home=None, port=8765):
         accept_prereleases = body.get("acceptPrereleases", True)
         if auto_remediate:
             try:
-                service.auto_remediate(rid)
+                await run_in_threadpool(service.auto_remediate, rid)
             except Exception:
                 pass
-        decisions = service.auto_decide(
-            rid, accept_prereleases=accept_prereleases, auto_remediate_custom=auto_remediate
+        decisions = await run_in_threadpool(
+            service.auto_decide,
+            rid,
+            accept_prereleases=accept_prereleases,
+            auto_remediate_custom=auto_remediate,
         )
         out, _ = service.run(rid)
         gate = read(out / "gate.json") if (out / "gate.json").is_file() else {}
@@ -768,7 +774,7 @@ def create_app(home=None, port=8765):
         return res
 
     @app.post("/api/runs/{rid}/capture-baseline")
-    async def capture_baseline_endpoint(rid: str):
+    def capture_baseline_endpoint(rid: str):
         from .two_gate import capture_run_baseline
         return capture_run_baseline(service, rid)
 
