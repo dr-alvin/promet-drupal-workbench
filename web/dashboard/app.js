@@ -1329,13 +1329,17 @@ async function refresh(){
     $('runs').dataset.rendered = runsKey;
     $('runs').replaceChildren();
     pr.forEach(r=>option($('runs'),`${r.action.replaceAll('guided-','')} · ${r.status} · ${(r.startedAt||'').slice(0,16)}`,r.id));
-     const bestRun = pr.find(r => r.action === 'guided-upgrade' && ['completed', 'needs_attention'].includes(r.status))
-                  || pr.find(r => r.action === 'guided-audit' && r.status === 'completed')
-                  || pr.find(r => r.status === 'completed')
-                  || pr[0];
-     if(old&&pr.some(r=>r.id===old))$('runs').value=old;
-     else if(bestRun)$('runs').value=bestRun.id;
    }
+   // choose() clears the selector before refresh; when the option list is unchanged the
+   // render above is skipped, so the selection must be restored here regardless — otherwise
+   // the report fetch below targets /api/runs//report (empty run id) and the operator sees
+   // a bare "Not Found" banner.
+   const bestRun = pr.find(r => r.action === 'guided-upgrade' && ['completed', 'needs_attention'].includes(r.status))
+                || pr.find(r => r.action === 'guided-audit' && r.status === 'completed')
+                || pr.find(r => r.status === 'completed')
+                || pr[0];
+   if(old&&pr.some(r=>r.id===old))$('runs').value=old;
+   else if(!pr.some(r=>r.id===$('runs').value)&&bestRun)$('runs').value=bestRun.id;
    if(typeof updateDeleteRunBtn==='function')updateDeleteRunBtn();
 
   const activeRun=pr.find(r=>r.status==='running');
@@ -2568,6 +2572,7 @@ async function loadProviders(){
 async function startLegacy(action,batch){return api('runs',{project:selected,action,batch});}
 
 async function loadReport(rid){
+ if(!rid)return; // nothing selected yet; never request /api/runs//report
  report=await api(rid.startsWith('setup--')?'setup/'+rid.slice(7)+'/report':'runs/'+rid+'/report');
  if($('report-meta'))$('report-meta').textContent=`${rid.slice(0,10)} · ${report.generatedAt||'In progress'} · ${report.partial?'Partial / review required':'Completed evidence'}${report.configChanged?' · inputs changed':''}`;
  if($('report-tabs')){
