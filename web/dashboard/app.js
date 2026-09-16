@@ -62,6 +62,8 @@ const themeManager = new ThemeManager();
 
 let projects=[],runs=[],selected=sessionStorage.getItem('d11-project')||'',report=null,activeTab='client',reviewHash='',gate=null,gateRunId='',compatibility=null,compatibilityDraft={},providers=null,capabilities={},refreshing=false,refreshAgain=false,pollTimer=null,imageUrls=[],setupSourceOrigin='',progressStartTime=0,progressElapsedInterval=null,lastProgressCheckpoint='',projectActivityLogs={};
 let terminalEventSource=null,activeJobId=null,activeJobDescription='',activeJobStartedAt=null,toastTimerInterval=null,projectScenarios=[],terminalTimerInterval=null,lastTerminalOutputTime=null,currentTerminalTimelineStep=1;
+let isCapturingBaseline=false,baselineCaptureStartTime=0,baselineCaptureElapsed=0,baselineCaptureTimer=null,baselineCaptureRunId='';
+let isStartingUpgrade=false,upgradeStartTime=0,upgradeElapsed=0,upgradeTimer=null;
 
 const PIPELINE_SUBSTEPS = {
   scan: [
@@ -335,11 +337,13 @@ function scheduleProgress(){
  clearTimeout(pollTimer);
  pollTimer=null;
  const runningRun = runs.find(r=>r.status==='running');
- const isRunning = projects.some(p=>p.status==='running') || Boolean(runningRun) || isTerminalRunning();
+ const isRunning = projects.some(p=>p.status==='running') || Boolean(runningRun) || isTerminalRunning() || isCapturingBaseline || isStartingUpgrade;
  if(!document.hidden && isRunning){
   if(runningRun){
    connectRunEvents(runningRun.id);
    pollTimer = setTimeout(() => refresh().catch(error), 5000);
+  } else if (isCapturingBaseline || isStartingUpgrade) {
+   pollTimer = setTimeout(() => refresh().catch(error), 1500);
   } else {
    disconnectRunEvents();
    pollTimer = setTimeout(() => refresh().catch(error), 3000);
@@ -470,59 +474,130 @@ function updateStepperStatus(p,pr){
 }
 
 function updateUpgradeExecution(upgrade){
- const steps=[
-  {id:'step-exec-env',checkpoints:['sanitizing_copy','copying_managed_project','creating_database_snapshot']},
-  {id:'step-exec-custom',checkpoints:['remediating_custom_code']},
-  {id:'step-exec-composer',checkpoints:['upgrading_composer_packages']},
-  {id:'step-exec-db',checkpoints:['executing_database_updates','verifying_post_upgrade_routes','completed']}
- ];
- const statusAlert=$('upgrade-active-status');
- if(!upgrade){
+  const steps=[
+   {
+     id:'step-exec-env',
+     badgeId:'badge-exec-env',
+     detailId:'detail-exec-env',
+     name:'1. Pre-Upgrade Backup & Baseline Checkpoint',
+     checkpoints:['capturing_pre_upgrade_baseline','creating_recovery_checkpoint','creating_database_snapshot','sanitizing_copy','copying_managed_project','managed_copy_verified'],
+     activeDetail:'Creating pre-upgrade database backup (pre-upgrade.sql.gz) & Git commit checkpoint...',
+     doneDetail:'Database backup pre-upgrade.sql.gz & Git checkpoint verified'
+   },
+   {
+     id:'step-exec-custom',
+     badgeId:'badge-exec-custom',
+     detailId:'detail-exec-custom',
+     name:'2. Custom Code & Deprecation Fixes',
+     checkpoints:['remediating_custom_code','applying_patches'],
+     activeDetail:'Applying Drupal Rector AST rules and deprecation fixes to custom code...',
+     doneDetail:'Custom code deprecations resolved and info.yml core compatibility updated'
+   },
+   {
+     id:'step-exec-composer',
+     badgeId:'badge-exec-composer',
+     detailId:'detail-exec-composer',
+     name:'3. Composer Package Upgrade',
+     checkpoints:['upgrading_composer_packages','apply_exact_composer_resolution','composer_install'],
+     activeDetail:'Upgrading drupal/core-recommended to Drupal 11.x and resolving contrib dependencies...',
+     doneDetail:'Drupal 11.x packages installed and dependencies resolved'
+   },
+   {
+     id:'step-exec-db',
+     badgeId:'badge-exec-db',
+     detailId:'detail-exec-db',
+     name:'4. Database Schema Migrations & Cache Clear',
+     checkpoints:['executing_approved_batch','database_updates','cache_rebuild','verifying_post_upgrade_routes','post_upgrade_verification','gate_2_passed','gate_2_visual_review','completed'],
+     activeDetail:'Running drush updatedb -y, drush cache:rebuild, and verifying site boot...',
+     doneDetail:'Database migrations complete, cache cleared, site bootstrap healthy'
+   }
+  ];
+  const statusAlert=$('upgrade-active-status');
+  const completeCard=$('upgrade-complete-actions');
+
+  if(!upgrade){
+   steps.forEach((s,idx)=>{
+    const node=$(s.id);
+    if(node){
+     node.className='exec-step';
+     const icon=node.querySelector('.exec-icon');
+     if(icon)icon.textContent=String(idx+1);
+     const badge=$(s.badgeId);
+     if(badge){badge.className='step-badge badge muted';badge.textContent='Pending';}
+     const detail=$(s.detailId);
+     if(detail){detail.style.display='none';detail.textContent='';}
+    }
+   });
+   if(completeCard)completeCard.style.display='none';
+   if(statusAlert)statusAlert.innerHTML='<span class="muted">Ready to start upgrade. Click "Start 1-Click Upgrade" in the Plan stage.</span>';
+   return;
+  }
+  const cp=upgrade.checkpoint||'';
+  const isDone=upgrade.status==='completed';
+  const isFailed=['critical','blocked','failed','reconciliation_required','interrupted'].includes(upgrade.status);
+  let currentIdx=-1;
+  steps.forEach((s,idx)=>{
+   if(s.checkpoints.includes(cp))currentIdx=idx;
+  });
+  if(isDone)currentIdx=steps.length;
+
   steps.forEach((s,idx)=>{
    const node=$(s.id);
-   if(node){
-    node.className='exec-step';
-    const icon=node.querySelector('.exec-icon');
+   if(!node)return;
+   const icon=node.querySelector('.exec-icon');
+   const badge=$(s.badgeId);
+   const detail=$(s.detailId);
+
+   if(idx<currentIdx||isDone){
+    node.className='exec-step step-done';
+    if(icon)icon.innerHTML='<svg class="ui-icon" aria-hidden="true" style="width:14px;height:14px;"><use href="#icon-check"></use></svg>';
+    if(badge){badge.className='step-badge badge green';badge.innerHTML='<svg class="ui-icon" aria-hidden="true" style="width:11px;height:11px;vertical-align:-1px;"><use href="#icon-check"></use></svg> Done';}
+    if(detail){detail.style.display='inline-block';detail.textContent=s.doneDetail;}
+   }else if(idx===currentIdx){
+    node.className='exec-step '+(isFailed?'step-failed':'step-active');
+    if(icon)icon.innerHTML=isFailed?'<svg class="ui-icon" aria-hidden="true" style="width:14px;height:14px;"><use href="#icon-x"></use></svg>':'<svg class="ui-icon spin" aria-hidden="true" style="width:14px;height:14px;"><use href="#icon-refresh"></use></svg>';
+    if(badge){
+     badge.className='step-badge badge '+(isFailed?'red':'blue live-pulse');
+     badge.innerHTML=isFailed?'<svg class="ui-icon" aria-hidden="true" style="width:11px;height:11px;vertical-align:-1px;"><use href="#icon-x"></use></svg> Failed':'<span class="live-pulse-dot"></span> Running...';
+    }
+    if(detail){detail.style.display='inline-block';detail.textContent=isFailed?(upgrade.rollbackError||upgrade.error||cp.replaceAll('_',' ')):s.activeDetail;}
+   }else{
+    node.className='exec-step step-pending';
     if(icon)icon.textContent=String(idx+1);
+    if(badge){badge.className='step-badge badge muted';badge.textContent='Queued';}
+    if(detail){detail.style.display='none';detail.textContent='';}
    }
   });
-  if(statusAlert)statusAlert.innerHTML='<span class="muted">Ready to start upgrade. Click "Start 1-Click Upgrade" in the Plan stage.</span>';
-  return;
- }
- const cp=upgrade.checkpoint||'';
- const isDone=upgrade.status==='completed';
- const isFailed=['critical','blocked','failed','reconciliation_required','interrupted'].includes(upgrade.status);
- let currentIdx=-1;
- steps.forEach((s,idx)=>{
-  if(s.checkpoints.includes(cp))currentIdx=idx;
- });
- if(isDone)currentIdx=steps.length;
- steps.forEach((s,idx)=>{
-  const node=$(s.id);
-  if(!node)return;
-  const icon=node.querySelector('.exec-icon');
-  if(idx<currentIdx||isDone){
-   node.className='exec-step step-done';
-   if(icon)icon.innerHTML='<svg class="ui-icon" aria-hidden="true" style="width:14px;height:14px;"><use href="#icon-check"></use></svg>';
-  }else if(idx===currentIdx){
-   node.className='exec-step '+(isFailed?'step-failed':'step-active');
-   if(icon)icon.innerHTML=isFailed?'<svg class="ui-icon" aria-hidden="true" style="width:14px;height:14px;"><use href="#icon-x"></use></svg>':'<svg class="ui-icon" aria-hidden="true" style="width:14px;height:14px;"><use href="#icon-clock"></use></svg>';
-  }else{
-   node.className='exec-step step-pending';
-   if(icon)icon.textContent=String(idx+1);
+
+  if(completeCard){
+   completeCard.style.display=isDone?'block':'none';
+   if(isDone){
+    const btnGoto = $('btn-goto-regression');
+    if(btnGoto) btnGoto.onclick = () => showStage('regression', true);
+    const btnOpenSite = $('btn-open-site-stage3');
+    if(btnOpenSite){
+     btnOpenSite.onclick = () => {
+      const p = selectedProject();
+      if(p?.site?.uri) window.open(p.site.uri, '_blank', 'noopener');
+      else if(p?.sourceUrl) window.open(p.sourceUrl, '_blank', 'noopener');
+     };
+    }
+    const btnRb = $('btn-rollback-stage3');
+    if(btnRb) btnRb.onclick = () => $('btn-do-rollback')?.click();
+   }
   }
- });
- if(statusAlert){
-  if(isDone){
-   statusAlert.innerHTML='<strong style="color:var(--emerald-600);"><svg class="ui-icon" aria-hidden="true" style="vertical-align:-2px;"><use href="#icon-check-circle"></use></svg> Automated Upgrade Complete!</strong> All custom deprecations resolved, packages upgraded, and database migrated.';
-  }else if(isFailed){
-   statusAlert.innerHTML=`<strong style="color:var(--rose-600);"><svg class="ui-icon" aria-hidden="true" style="vertical-align:-2px;"><use href="#icon-alert-triangle"></use></svg> Upgrade Halted:</strong> ${escapeHtml(upgrade.rollbackError||upgrade.error||cp.replaceAll('_',' '))}`;
-  }else if(upgrade.status==='running'){
-   statusAlert.innerHTML=`<strong style="color:var(--brand-600);"><svg class="ui-icon" aria-hidden="true" style="vertical-align:-2px;"><use href="#icon-clock"></use></svg> Execution in Progress:</strong> ${escapeHtml(cp.replaceAll('_',' '))}...`;
-  }else{
-   statusAlert.innerHTML=`<span class="muted">Status: ${escapeHtml(upgrade.status)} · ${escapeHtml(cp.replaceAll('_',' '))}</span>`;
+
+  if(statusAlert){
+   if(isDone){
+    statusAlert.innerHTML='<strong style="color:var(--emerald-600);"><svg class="ui-icon" aria-hidden="true" style="vertical-align:-2px;"><use href="#icon-check-circle"></use></svg> Automated Upgrade Complete!</strong> All custom deprecations resolved, packages upgraded to Drupal 11.x, and database migrated.';
+   }else if(isFailed){
+    statusAlert.innerHTML=`<strong style="color:var(--rose-600);"><svg class="ui-icon" aria-hidden="true" style="vertical-align:-2px;"><use href="#icon-alert-triangle"></use></svg> Upgrade Halted:</strong> ${escapeHtml(upgrade.rollbackError||upgrade.error||cp.replaceAll('_',' '))}`;
+   }else if(upgrade.status==='running'){
+    statusAlert.innerHTML=`<strong style="color:var(--brand-600);"><svg class="ui-icon spin" aria-hidden="true" style="vertical-align:-2px;"><use href="#icon-refresh"></use></svg> Execution in Progress:</strong> ${escapeHtml(cp.replaceAll('_',' '))}...`;
+   }else{
+    statusAlert.innerHTML=`<span class="muted">Status: ${escapeHtml(upgrade.status)} · ${escapeHtml(cp.replaceAll('_',' '))}</span>`;
+   }
   }
- }
 
  const doctorPanel = $('ai-doctor-panel');
  const isAiReady = Boolean((window.providers || providers || []).some(p => p.available && p.safeInterface));
@@ -1337,30 +1412,47 @@ async function fetchProjectActivity(pid){
 }
 
 function renderConsoleLogs(pid){
+ const logs = (pid && projectActivityLogs[pid]) || (selected && projectActivityLogs[selected]) || [];
  const out = $('console-output');
  const count = $('console-line-count');
- if(!out) return;
- const logs = projectActivityLogs[pid] || [];
- out.textContent = logs.join('\n') || 'Background execution active. Awaiting new events...';
- if(count) count.textContent = `${logs.length} event${logs.length === 1 ? '' : 's'}`;
- out.scrollTop = out.scrollHeight;
+ if(out){
+  out.textContent = logs.join('\n') || 'Background execution active. Awaiting new events...';
+  if(count) count.textContent = `${logs.length} event${logs.length === 1 ? '' : 's'}`;
+  out.scrollTop = out.scrollHeight;
+ }
+ const stageOut = $('stage-upgrade-console');
+ const stageCount = $('stage-upgrade-log-count');
+ if(stageOut){
+  stageOut.textContent = logs.join('\n') || 'Upgrade execution active. Awaiting logs...';
+  if(stageCount) stageCount.textContent = `${logs.length} event${logs.length === 1 ? '' : 's'}`;
+  stageOut.scrollTop = stageOut.scrollHeight;
+ }
 }
 
 function initProgressConsoleEvents(){
  const btn = $('toggle-progress-log');
- if(!btn) return;
- btn.onclick = () => {
-  const consoleEl = $('pipeline-log-console');
-  if(!consoleEl) return;
-  const willOpen = consoleEl.hidden;
-  consoleEl.hidden = !willOpen;
-  btn.classList.toggle('open', willOpen);
-  if($('toggle-log-label')){
-   $('toggle-log-label').textContent = willOpen ? 'Hide Activity Feed' : 'Live Activity Feed';
-  }
-  const pid = selected;
-  if(pid && willOpen) renderConsoleLogs(pid);
- };
+ if(btn){
+  btn.onclick = () => {
+   const consoleEl = $('pipeline-log-console');
+   if(!consoleEl) return;
+   const willOpen = consoleEl.hidden;
+   consoleEl.hidden = !willOpen;
+   btn.classList.toggle('open', willOpen);
+   if($('toggle-log-label')){
+    $('toggle-log-label').textContent = willOpen ? 'Hide Activity Feed' : 'Live Activity Feed';
+   }
+   const pid = selected;
+   if(pid && willOpen) renderConsoleLogs(pid);
+  };
+ }
+ const stageToggle = $('stage-upgrade-console-toggle');
+ if(stageToggle){
+  stageToggle.onclick = () => {
+   const consoleEl = $('stage-upgrade-console');
+   if(!consoleEl) return;
+   consoleEl.hidden = !consoleEl.hidden;
+  };
+ }
 }
 
 function renderInformativeProgress(p, activeRun){
@@ -1684,6 +1776,151 @@ function developerActions(){
  );
 }
 
+function updateBaselineCaptureUI() {
+  if (!isCapturingBaseline) return;
+  const elapsedStr = `${baselineCaptureElapsed}s`;
+
+  const heroBtn = $('hero-one-click-upgrade');
+  if (heroBtn) {
+    heroBtn.disabled = true;
+    heroBtn.className = 'primary hero-btn';
+    heroBtn.title = `Capturing pre-upgrade visual baseline (${elapsedStr})...`;
+    heroBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Baseline (${elapsedStr})...`;
+  }
+
+  const btnUpgrade = $('btn-start-upgrade');
+  if (btnUpgrade) {
+    btnUpgrade.disabled = true;
+    btnUpgrade.title = `Capturing pre-upgrade visual baseline (${elapsedStr})...`;
+    btnUpgrade.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Baseline (${elapsedStr})...`;
+  }
+
+  const fastScanBtn = Array.from(document.querySelectorAll('#next-actions button')).find(b => b.textContent.includes('Re-run Scan') || b.textContent.includes('Run Test Audit'));
+  if (fastScanBtn) {
+    fastScanBtn.disabled = true;
+    fastScanBtn.title = 'Disabled while visual baseline capture is executing';
+  }
+
+  const pill = $('baseline-status-pill');
+  if (pill) {
+    pill.className = 'badge blue live-pulse';
+    pill.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Visual Baseline: Capturing (${elapsedStr})...`;
+  }
+
+  const capBtn = $('btn-capture-baseline');
+  if (capBtn) {
+    capBtn.style.display = 'inline-flex';
+    capBtn.disabled = true;
+    capBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing (${elapsedStr})...`;
+  }
+
+  const nextTitle = $('next-title');
+  const nextDetail = $('next-detail');
+  if (nextTitle) {
+    nextTitle.innerHTML = `<svg class="ui-icon spin" style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;" aria-hidden="true"><use href="#icon-refresh"></use></svg>Capturing Pre-Upgrade Visual Baseline...`;
+  }
+  if (nextDetail) {
+    const routeNum = gate?.quickSummary?.baselineRoutes || gate?.baseline?.selected || 15;
+    nextDetail.textContent = `Taking reference screenshots across ${routeNum} routes (${elapsedStr} elapsed). Dashboard will update automatically when complete.`;
+  }
+
+  if ($('pipeline-live-badge')) $('pipeline-live-badge').hidden = false;
+  if ($('pipeline-elapsed-wrap')) {
+    $('pipeline-elapsed-wrap').hidden = false;
+    const mins = String(Math.floor(baselineCaptureElapsed / 60)).padStart(2, '0');
+    const secs = String(baselineCaptureElapsed % 60).padStart(2, '0');
+    if ($('pipeline-elapsed-text')) $('pipeline-elapsed-text').textContent = `${mins}:${secs}s`;
+  }
+
+  const baseCaptureBtn = $('confirm-capture-baseline-btn');
+  if (baseCaptureBtn) {
+    baseCaptureBtn.disabled = true;
+    baseCaptureBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Baseline (${elapsedStr})...`;
+  }
+  const confirmBtn = $('execute-confirm-upgrade-btn');
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Pre-Upgrade Baseline (${elapsedStr})...`;
+  }
+  const baseText = $('confirm-baseline-text');
+  if (baseText) {
+    baseText.innerHTML = `<strong>Visual Baseline Capture in Progress:</strong> Pre-upgrade screenshots are currently being recorded (${elapsedStr} elapsed). You can close this modal; capture will continue in the background.`;
+  }
+  const baseNotice = $('confirm-baseline-notice');
+  if (baseNotice) {
+    baseNotice.style.borderColor = 'var(--blue-border, #3b82f6)';
+    baseNotice.style.background = 'var(--blue-bg, rgba(59,130,246,0.08))';
+  }
+}
+
+async function startCapturingBaseline(targetRunId) {
+  const rid = targetRunId || gateRunId || (runs.filter(r => r.project === selected).find(r => r.action === 'guided-audit' && r.status === 'completed')?.id);
+  if (!rid) {
+    const pr = runs.filter(r => r.project === selected);
+    const active = pr.find(r => r.status === 'running');
+    if (active) {
+      if (typeof showToast === 'function') showToast('Audit scan is currently in progress. Baseline can be captured once the scan finishes.');
+    } else {
+      if (typeof showToast === 'function') showToast('Please wait for or run the Test Audit scan before capturing visual baseline.');
+    }
+    return;
+  }
+  if (isCapturingBaseline) {
+    if (typeof showToast === 'function') showToast('Visual baseline capture is already in progress.');
+    return;
+  }
+
+  isCapturingBaseline = true;
+  baselineCaptureStartTime = Date.now();
+  baselineCaptureElapsed = 0;
+  baselineCaptureRunId = rid;
+
+  if (baselineCaptureTimer) clearInterval(baselineCaptureTimer);
+  baselineCaptureTimer = setInterval(() => {
+    baselineCaptureElapsed = Math.max(1, Math.floor((Date.now() - baselineCaptureStartTime) / 1000));
+    updateBaselineCaptureUI();
+  }, 1000);
+
+  updateBaselineCaptureUI();
+
+  try {
+    const res = await api('runs/' + rid + '/capture-baseline', {});
+    const routeCount = res?.routeCount || (gate?.quickSummary?.baselineRoutes) || 0;
+
+    isCapturingBaseline = false;
+    clearInterval(baselineCaptureTimer);
+    baselineCaptureTimer = null;
+
+    gate = null;
+    gateRunId = '';
+    report = null;
+
+    await refresh();
+
+    const modal = $('upgrade-confirm-modal');
+    if (modal && !modal.hidden) {
+      openUpgradeConfirmModal();
+    }
+
+    if (typeof showToast === 'function') {
+      showToast(`✓ Pre-upgrade visual baseline captured successfully (${routeCount || 'all'} routes)! Ready for 1-Click Upgrade.`);
+    }
+  } catch (err) {
+    isCapturingBaseline = false;
+    clearInterval(baselineCaptureTimer);
+    baselineCaptureTimer = null;
+
+    gate = null;
+    gateRunId = '';
+    await refresh().catch(() => {});
+
+    if (typeof showToast === 'function') {
+      showToast('Failed to capture baseline: ' + (err.message || err));
+    }
+    error(err);
+  }
+}
+
 async function showGate(audit,actions,preserveActions=false){
  const needsLoad = !gate || gateRunId !== audit.id || !compatibility;
  if(needsLoad){
@@ -1741,23 +1978,49 @@ async function showGate(audit,actions,preserveActions=false){
    decisionView.saved=decisionSignature();
   }
   renderCompatibility();
-  updateQuickSummary();
   updateAuditEvidence(audit,selectedProject());
  }
 
+ updateQuickSummary();
+
  if(!preserveActions){
-  $('next-title').textContent=gate.automationLabel||gate.risk?.recommendation||'Audit Complete';
-  const navNote=(gate.baseline?.headerCount||gate.baseline?.footerCount)?` (${gate.baseline.headerCount} header, ${gate.baseline.footerCount} footer)`:'';
-  $('next-detail').textContent=`${gate.risk?.recommendation||'Ready'} · risk ${gate.risk?.score||0}/100 · ${(gate.risk?.hardBlockers||[]).length} hard blockers · ${(gate.baseline?.selected)||0} baseline routes${navNote}.`;
+  if(isCapturingBaseline){
+   $('next-title').innerHTML = `<svg class="ui-icon spin" style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;" aria-hidden="true"><use href="#icon-refresh"></use></svg>Capturing Pre-Upgrade Visual Baseline...`;
+   const routeNum = gate?.quickSummary?.baselineRoutes || gate?.baseline?.selected || 15;
+   $('next-detail').textContent = `Taking reference screenshots across ${routeNum} routes (${baselineCaptureElapsed}s elapsed). Dashboard will update automatically when complete.`;
+   if($('pipeline-live-badge')) $('pipeline-live-badge').hidden = false;
+   if($('pipeline-elapsed-wrap')){
+    $('pipeline-elapsed-wrap').hidden = false;
+    const mins = String(Math.floor(baselineCaptureElapsed / 60)).padStart(2, '0');
+    const secs = String(baselineCaptureElapsed % 60).padStart(2, '0');
+    if($('pipeline-elapsed-text')) $('pipeline-elapsed-text').textContent = `${mins}:${secs}s`;
+   }
+  } else {
+   $('next-title').textContent=gate.automationLabel||gate.risk?.recommendation||'Audit Complete';
+   const navNote=(gate.baseline?.headerCount||gate.baseline?.footerCount)?` (${gate.baseline.headerCount} header, ${gate.baseline.footerCount} footer)`:'';
+   $('next-detail').textContent=`${gate.risk?.recommendation||'Ready'} · risk ${gate.risk?.score||0}/100 · ${(gate.risk?.hardBlockers||[]).length} hard blockers · ${(gate.baseline?.selected)||0} baseline routes${navNote}.`;
+   if($('pipeline-live-badge')) $('pipeline-live-badge').hidden = true;
+   if($('pipeline-elapsed-wrap')) $('pipeline-elapsed-wrap').hidden = true;
+  }
 
   if(!$('btn-start-upgrade')){
    actions.replaceChildren();
    const btnUpgrade = button('Start 1-Click Upgrade',async()=>{
+    const isBusyUpgrade = isStartingUpgrade || (runs && runs.some(r => r.action === 'guided-upgrade' && r.status === 'running'));
+    if (isBusyUpgrade || isCapturingBaseline) return;
     if($('hero-one-click-upgrade'))$('hero-one-click-upgrade').click();
    });
    btnUpgrade.id = 'btn-start-upgrade';
    actions.append(btnUpgrade);
-   actions.append(button('⚡ Re-run Scan (Fast)',()=>api('projects/'+selected+'/scan',{fast:true}),'secondary'));
+   const btnScan = button('⚡ Re-run Scan (Fast)',async()=>{
+    const isBusyUpgrade = isStartingUpgrade || (runs && runs.some(r => r.action === 'guided-upgrade' && r.status === 'running'));
+    if (isBusyUpgrade || isCapturingBaseline || (runs && runs.some(r => r.status === 'running'))) {
+      if (typeof showToast === 'function') showToast('Cannot scan while an upgrade or baseline capture is executing.');
+      return;
+    }
+    return api('projects/'+selected+'/scan',{fast:true});
+   },'secondary');
+   actions.append(btnScan);
    developerActions();
   }
  }
@@ -1775,7 +2038,9 @@ function updateUpgradeActionButtons(){
  const activeVer = getActiveCoreVersion(p);
  const isTermRunning = isTerminalRunning();
  const isWorkflowActive = Boolean((runs && runs.some(r=>r.status==='running')) || (projects && projects.some(p=>p.status==='running')));
- const isUpgradeBusy = isTermRunning || isWorkflowActive;
+ const isBusyUpgrade = isStartingUpgrade || pr.some(r => r.action === 'guided-upgrade' && r.status === 'running');
+ const isAnyBusy = isBusyUpgrade || isWorkflowActive || isCapturingBaseline || isTermRunning;
+ const isUpgradeBusy = isBusyUpgrade || isTermRunning || isWorkflowActive;
 
  const heroBtn = $('hero-one-click-upgrade');
  const heroTitle = $('plan-hero-title');
@@ -1814,11 +2079,26 @@ function updateUpgradeActionButtons(){
   if(heroDesc) heroDesc.textContent = `Automatically remediate custom code with AI, upgrade compatible Composer packages to Drupal 11, apply community patches, and execute the upgrade with database backup and a dedicated feature branch.`;
   if(heroBtn){
    heroBtn.className = 'primary hero-btn';
-   heroBtn.onclick = () => { if(typeof openUpgradeConfirmModal === 'function') openUpgradeConfirmModal(); };
+   heroBtn.onclick = () => {
+    if(isAnyBusy) return;
+    if(typeof openUpgradeConfirmModal === 'function') openUpgradeConfirmModal();
+   };
    if(isTermRunning){
     heroBtn.disabled = true;
     heroBtn.title = 'Disabled: Command currently executing in Upgrade Console (' + (activeJobDescription || 'console task') + ')';
     heroBtn.innerHTML = '<svg class="ui-icon" aria-hidden="true"><use href="#icon-clock"></use></svg> Console Task Running...';
+   }else if(isStartingUpgrade){
+    heroBtn.disabled = true;
+    heroBtn.title = `Disabled: Upgrade rehearsal is starting (${upgradeElapsed}s)`;
+    heroBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Starting Upgrade (${upgradeElapsed}s)...`;
+   }else if(isBusyUpgrade){
+    heroBtn.disabled = true;
+    heroBtn.title = 'Disabled: Upgrade rehearsal is currently executing';
+    heroBtn.innerHTML = '<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Upgrade Running...';
+   }else if(isCapturingBaseline){
+    heroBtn.disabled = true;
+    heroBtn.title = `Disabled: Pre-upgrade visual baseline capture is currently in progress (${baselineCaptureElapsed}s)`;
+    heroBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Baseline (${baselineCaptureElapsed}s)...`;
    }else if(isWorkflowActive){
     heroBtn.disabled = true;
     heroBtn.title = 'Disabled: An upgrade or scan workflow is currently executing';
@@ -1850,12 +2130,25 @@ function updateUpgradeActionButtons(){
   } else {
    btnUpgrade.className = '';
    btnUpgrade.onclick = async () => {
+    if(isAnyBusy) return;
     if($('hero-one-click-upgrade')) $('hero-one-click-upgrade').click();
    };
    if(isTermRunning){
     btnUpgrade.disabled = true;
     btnUpgrade.title = 'Disabled: Command currently executing in Upgrade Console (' + (activeJobDescription || 'console task') + ')';
     btnUpgrade.textContent = 'Upgrade Running in Console...';
+   }else if(isStartingUpgrade){
+    btnUpgrade.disabled = true;
+    btnUpgrade.title = `Disabled: Upgrade rehearsal is starting (${upgradeElapsed}s)`;
+    btnUpgrade.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Starting Upgrade (${upgradeElapsed}s)...`;
+   }else if(isBusyUpgrade){
+    btnUpgrade.disabled = true;
+    btnUpgrade.title = 'Disabled: Upgrade rehearsal is currently executing';
+    btnUpgrade.innerHTML = '<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Upgrade Running...';
+   }else if(isCapturingBaseline){
+    btnUpgrade.disabled = true;
+    btnUpgrade.title = `Disabled: Pre-upgrade visual baseline capture is currently in progress (${baselineCaptureElapsed}s)`;
+    btnUpgrade.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Baseline (${baselineCaptureElapsed}s)...`;
    }else if(isWorkflowActive){
     btnUpgrade.disabled = true;
     btnUpgrade.title = 'Disabled: Workflow is currently running';
@@ -1890,13 +2183,22 @@ function updateUpgradeActionButtons(){
   if(isUpgraded){
    capBtn.style.display = 'none';
   }
-  // (when not upgraded, visibility is managed by the baseline-status-pill logic above)
  }
 
- const fastScanBtn = Array.from(document.querySelectorAll('#next-actions button')).find(b => b.textContent.includes('Re-run Scan'));
+ const fastScanBtn = Array.from(document.querySelectorAll('#next-actions button')).find(b => b.textContent.includes('Re-run Scan') || b.textContent.includes('Run Test Audit'));
  if(fastScanBtn){
-  fastScanBtn.disabled = isUpgradeBusy;
-  fastScanBtn.title = isUpgradeBusy ? 'Disabled while background tasks are executing' : '';
+  fastScanBtn.disabled = isAnyBusy;
+  if(isStartingUpgrade || isBusyUpgrade){
+   fastScanBtn.title = 'Disabled while upgrade rehearsal is executing';
+  }else if(isCapturingBaseline){
+   fastScanBtn.title = 'Disabled while visual baseline capture is executing';
+  }else if(isWorkflowActive){
+   fastScanBtn.title = 'Disabled while workflow is running';
+  }else if(isTermRunning){
+   fastScanBtn.title = 'Disabled while console task is executing';
+  }else{
+   fastScanBtn.title = '';
+  }
  }
 }
 
@@ -1907,6 +2209,7 @@ function isCleanExtension(row){
 
 function getRecommendedAction(row){
  if(!row)return 'defer';
+ if(row.name === 'tb_megamenu' && (row.currentVersion?.startsWith('3.') || row.currentVersion === '3.0.0-alpha5')) return 'keep';
  const OBSOLETE_PERF = ['advagg', 'advagg_bundler', 'advagg_css_minify', 'advagg_js_minify', 'advagg_mod', 'advagg_validator', 'fastclick'];
  if(OBSOLETE_PERF.includes(row.name))return 'remove';
  if(row.recommendedAction==='remove')return 'remove';
@@ -1928,6 +2231,13 @@ function getRecommendedAction(row){
 
 function getEffectiveAction(row){
  if(!row)return 'pending';
+ if(row.name === 'tb_megamenu' && (row.currentVersion?.startsWith('3.') || row.currentVersion === '3.0.0-alpha5')) {
+  const chosenAct = compatibilityDraft[row.name]?.action || row.selectedAction;
+  const chosenCand = compatibilityDraft[row.name]?.candidateVersion || row.decision?.candidateVersion;
+  if(!chosenAct || chosenAct === 'defer' || (chosenAct === 'compatible_release' && (chosenCand?.startsWith('1.') || !chosenCand))) {
+   return 'keep';
+  }
+ }
  const candVer = row.releaseCandidates?.[0]?.version || row.targetVersion;
  const isSameVersion = Boolean(row.currentVersion && candVer && row.currentVersion === candVer);
  const isClean = isCleanExtension(row);
@@ -1998,11 +2308,20 @@ function updateQuickSummary(){
     const routeCount = qs?.baselineScreenshotCount || qs?.baselineRoutes || 0;
     const pill = $('baseline-status-pill');
     const capBtn = $('btn-capture-baseline');
-    if (hasBaseline) {
+    if (isCapturingBaseline || qs?.baselineCapturing) {
+      pill.className = 'badge blue';
+      pill.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Baseline (${baselineCaptureElapsed}s)...`;
+      if (capBtn) {
+        capBtn.style.display = 'inline-flex';
+        capBtn.disabled = true;
+        capBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing (${baselineCaptureElapsed}s)...`;
+      }
+    } else if (hasBaseline) {
       pill.className = 'badge green';
       pill.innerHTML = `<svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg> Visual Baseline: Ready (${routeCount} routes)`;
       if (capBtn) {
         capBtn.style.display = 'inline-flex';
+        capBtn.disabled = false;
         capBtn.innerHTML = '<svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg> Refresh Baseline';
       }
     } else {
@@ -2010,6 +2329,7 @@ function updateQuickSummary(){
       pill.innerHTML = `<svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg> Visual Baseline: Deferred (Fast Scan)`;
       if (capBtn) {
         capBtn.style.display = 'inline-flex';
+        capBtn.disabled = false;
         capBtn.innerHTML = '<svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg> Capture Baseline Now';
       }
     }
@@ -2123,10 +2443,11 @@ function renderCompatibilityCards(){
  const rows=compatibility.extensions.filter(row=>(row.name+' '+row.label+' '+row.status+' '+row.type+' '+row.source).toLowerCase().includes(query));
  for(const row of rows){
   const defaultAction = getEffectiveAction(row);
+  const isTbMegaMenuV3 = row.name === 'tb_megamenu' && (row.currentVersion?.startsWith('3.') || row.currentVersion === '3.0.0-alpha5');
   const draft=compatibilityDraft[row.name]||{
    action: defaultAction,
    candidateId: row.decision?.candidateId || (defaultAction==='available_patch'?row.patches?.find(p=>p.approvalEligible)?.id:null) || null,
-   candidateVersion: row.decision?.candidateVersion || row.targetVersion || (defaultAction==='compatible_release'?row.releaseCandidates?.[0]?.version:null) || null,
+   candidateVersion: isTbMegaMenuV3 ? row.currentVersion : (row.decision?.candidateVersion || row.targetVersion || (defaultAction==='compatible_release'?row.releaseCandidates?.[0]?.version:null) || null),
    acceptRisk: row.decision?.acceptRisk===true,
    note: row.decision?.note||''
   };
@@ -3115,7 +3436,15 @@ async function openUpgradeConfirmModal() {
   const count = qs?.baselineScreenshotCount || qs?.baselineRoutes || 0;
 
   if (confirmBtn) {
-    if (hasBaseline) {
+    if (isCapturingBaseline) {
+      confirmBtn.disabled = true;
+      confirmBtn.title = 'Visual baseline capture is in progress';
+      confirmBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Baseline (${baselineCaptureElapsed}s)...`;
+    } else if (isStartingUpgrade) {
+      confirmBtn.disabled = true;
+      confirmBtn.title = 'Upgrade rehearsal is starting';
+      confirmBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Starting Upgrade (${upgradeElapsed}s)...`;
+    } else if (hasBaseline) {
       confirmBtn.disabled = false;
       confirmBtn.title = '';
       confirmBtn.innerHTML = '<svg class="ui-icon" aria-hidden="true"><use href="#icon-rocket"></use></svg> Confirm &amp; Start Upgrade →';
@@ -3127,7 +3456,16 @@ async function openUpgradeConfirmModal() {
   }
 
   if (baseNotice && baseText) {
-    if (hasBaseline) {
+    if (isCapturingBaseline) {
+      baseNotice.style.borderColor = 'var(--blue-border, #3b82f6)';
+      baseNotice.style.background = 'var(--blue-bg, rgba(59,130,246,0.08))';
+      baseText.innerHTML = `<strong>Visual Baseline Capture in Progress:</strong> Pre-upgrade screenshots are currently being recorded (${baselineCaptureElapsed}s elapsed). You can close this modal; capture will continue in the background and the dashboard will update automatically when finished.`;
+      if (baseCaptureBtn) {
+        baseCaptureBtn.style.display = 'inline-flex';
+        baseCaptureBtn.disabled = true;
+        baseCaptureBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing (${baselineCaptureElapsed}s)...`;
+      }
+    } else if (hasBaseline) {
       baseNotice.style.borderColor = 'var(--emerald-border, #10b981)';
       baseNotice.style.background = 'var(--emerald-bg, rgba(16,185,129,0.08))';
       baseText.innerHTML = `<strong>Visual Baseline Ready (${count} routes):</strong> Pre-upgrade screenshots recorded. Gate 2 will generate pixel-level visual diffs.`;
@@ -3140,33 +3478,8 @@ async function openUpgradeConfirmModal() {
         baseCaptureBtn.style.display = 'inline-flex';
         baseCaptureBtn.disabled = false;
         baseCaptureBtn.innerHTML = '<svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg> Capture Baseline Now';
-        baseCaptureBtn.onclick = async () => {
-          if (!gateRunId) return;
-          baseCaptureBtn.disabled = true;
-          let capElapsed = 0;
-          baseCaptureBtn.innerHTML = '<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Baseline (0s)...';
-          const capTimer = setInterval(() => {
-            capElapsed++;
-            baseCaptureBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Baseline (${capElapsed}s)...`;
-          }, 1000);
-          try {
-            await api('runs/' + gateRunId + '/capture-baseline', {});
-            await refresh();
-            baseNotice.style.borderColor = 'var(--emerald-border, #10b981)';
-            baseNotice.style.background = 'var(--emerald-bg, rgba(16,185,129,0.08))';
-            baseText.innerHTML = `<strong>Visual Baseline Ready:</strong> Pre-upgrade baseline captured successfully! You can now confirm and start the upgrade.`;
-            baseCaptureBtn.style.display = 'none';
-            if (confirmBtn) {
-              confirmBtn.disabled = false;
-              confirmBtn.title = '';
-            }
-          } catch (e) {
-            error(e);
-            baseCaptureBtn.disabled = false;
-            baseCaptureBtn.innerHTML = '<svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg> Capture Baseline Now';
-          } finally {
-            clearInterval(capTimer);
-          }
+        baseCaptureBtn.onclick = () => {
+          startCapturingBaseline(gateRunId);
         };
       }
     }
@@ -3177,6 +3490,9 @@ async function openUpgradeConfirmModal() {
 
 function closeUpgradeConfirmModal() {
   if ($('upgrade-confirm-modal')) $('upgrade-confirm-modal').hidden = true;
+  if (isCapturingBaseline && typeof showToast === 'function') {
+    showToast('📸 Visual baseline capture is continuing in the background. The dashboard will update automatically when complete.');
+  }
 }
 
 async function executeConfirmedUpgrade() {
@@ -3184,51 +3500,42 @@ async function executeConfirmedUpgrade() {
   let hasBaseline = Boolean(qs?.baselineCaptured);
   const modalBtn = $('execute-confirm-upgrade-btn');
   const heroBtn = $('hero-one-click-upgrade');
-  let elapsed = 0;
 
   if (!hasBaseline) {
-    if (modalBtn) {
-      modalBtn.disabled = true;
-      modalBtn.innerHTML = '<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Pre-Upgrade Baseline...';
+    if (typeof showToast === 'function') {
+      showToast('Capturing pre-upgrade visual baseline first before starting upgrade rehearsal...');
     }
-    if (heroBtn) {
-      heroBtn.disabled = true;
-      heroBtn.innerHTML = '<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Pre-Upgrade Baseline...';
-    }
-    try {
-      await api('runs/' + gateRunId + '/capture-baseline', {});
-      hasBaseline = true;
-    } catch (err) {
-      if (typeof showToast === 'function') showToast('Failed to capture baseline: ' + (err.message || err));
-      error(err);
-      if (modalBtn) {
-        modalBtn.disabled = false;
-        modalBtn.innerHTML = '<svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg> Retry Baseline Capture';
-      }
-      if (heroBtn) heroBtn.disabled = false;
-      return;
-    }
+    await startCapturingBaseline(gateRunId);
+    return;
   }
 
+  isStartingUpgrade = true;
+  upgradeStartTime = Date.now();
+  upgradeElapsed = 0;
+
+  if (upgradeTimer) clearInterval(upgradeTimer);
+  upgradeTimer = setInterval(() => {
+    upgradeElapsed = Math.max(1, Math.floor((Date.now() - upgradeStartTime) / 1000));
+    updateUpgradeActionButtons();
+    if (modalBtn) modalBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Starting Upgrade (${upgradeElapsed}s)...`;
+  }, 1000);
+
+  updateUpgradeActionButtons();
   if (modalBtn) {
     modalBtn.disabled = true;
     modalBtn.innerHTML = '<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Starting Upgrade (0s)...';
   }
-  if (heroBtn) {
-    heroBtn.disabled = true;
-    heroBtn.innerHTML = '<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Starting Upgrade (0s)...';
-  }
-  const upgradeTimer = setInterval(() => {
-    elapsed++;
-    if (modalBtn) modalBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Starting Upgrade (${elapsed}s)...`;
-    if (heroBtn) heroBtn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Starting Upgrade (${elapsed}s)...`;
-  }, 1000);
 
   try {
     const digest = (typeof compatibility !== 'undefined' && compatibility && compatibility.digest) || (typeof report !== 'undefined' && report && report.compatibility ? report.compatibility.digest : null) || (typeof gate !== 'undefined' && gate && gate.compatibility ? gate.compatibility.digest : null) || (typeof decisionView !== 'undefined' ? decisionView.digest : null) || null;
     const decisions = typeof compatibilityDecisions === 'function' ? compatibilityDecisions() : [];
     await api('runs/' + gateRunId + '/one-click-upgrade', { reportDigest: digest, decisions, acceptRisks: true });
+    
+    isStartingUpgrade = false;
     clearInterval(upgradeTimer);
+    upgradeTimer = null;
+    updateUpgradeActionButtons();
+
     if (typeof decisionView !== 'undefined') {
       decisionView.saved = typeof decisionSignature === 'function' ? decisionSignature() : null;
       decisionView.baseline = JSON.parse(JSON.stringify(compatibilityDraft));
@@ -3239,15 +3546,14 @@ async function executeConfirmedUpgrade() {
     report = null;
     await refresh();
   } catch (err) {
+    isStartingUpgrade = false;
     clearInterval(upgradeTimer);
+    upgradeTimer = null;
+    updateUpgradeActionButtons();
     error(err);
     if (modalBtn) {
       modalBtn.disabled = false;
       modalBtn.innerHTML = '<svg class="ui-icon" aria-hidden="true"><use href="#icon-rocket"></use></svg> Confirm &amp; Start Upgrade →';
-    }
-    if (heroBtn) {
-      heroBtn.disabled = false;
-      heroBtn.innerHTML = '<svg class="ui-icon" aria-hidden="true"><use href="#icon-rocket"></use></svg> Start 1-Click Upgrade →';
     }
   }
 }
@@ -3256,35 +3562,8 @@ window.openUpgradeConfirmModal = openUpgradeConfirmModal;
 
   if ($('hero-one-click-upgrade')) $('hero-one-click-upgrade').onclick = () => { if (typeof openUpgradeConfirmModal === 'function') openUpgradeConfirmModal(); };
   if ($('btn-capture-baseline')) {
-    $('btn-capture-baseline').onclick = async () => {
-      if (!gateRunId) {
-        const pr = runs.filter(r => r.project === selected);
-        const active = pr.find(r => r.status === 'running');
-        if (active) {
-          if (typeof showToast === 'function') showToast('Audit scan is currently in progress. Baseline can be captured once the scan finishes.');
-        } else {
-          if (typeof showToast === 'function') showToast('Please wait for or run the Test Audit scan before capturing visual baseline.');
-        }
-        return;
-      }
-      const btn = $('btn-capture-baseline');
-      btn.disabled = true;
-      let elapsed = 0;
-      btn.innerHTML = '<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Baseline Routes (0s)...';
-      const timer = setInterval(() => {
-        elapsed++;
-        btn.innerHTML = `<svg class="ui-icon spin" aria-hidden="true"><use href="#icon-refresh"></use></svg> Capturing Baseline Routes (${elapsed}s)...`;
-      }, 1000);
-      try {
-        await api('runs/' + gateRunId + '/capture-baseline', {});
-        await refresh();
-      } catch (e) {
-        error(e);
-      } finally {
-        clearInterval(timer);
-        btn.disabled = false;
-        btn.innerHTML = '<svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg> Capture Baseline';
-      }
+    $('btn-capture-baseline').onclick = () => {
+      startCapturingBaseline(gateRunId);
     };
   }
   if ($('btn-view-sidebyside')) $('btn-view-sidebyside').onclick = () => applyRegressionViewMode('sidebyside');

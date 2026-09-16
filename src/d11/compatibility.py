@@ -103,6 +103,19 @@ def version_tuple(value):
     return tuple(int(part or 0) for part in match.groups()) if match else None
 
 
+def semver_tuple(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    raw = re.sub(r"^\d+\.x-", "", raw)
+    raw = re.sub(r"^[~^><=v]+", "", raw)
+    raw = re.sub(r"[-@].*$", "", raw)
+    match = re.match(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?", raw)
+    if match:
+        return (int(match.group(1)), int(match.group(2) or 0), int(match.group(3) or 0))
+    return None
+
+
 def fixture_extension(extension):
     parts = Path(extension.get("path") or "").parts
     return any(part.lower() in ("tests", "test", "fixtures", "examples") for part in parts)
@@ -342,6 +355,14 @@ def build(context, tool_checks, solver, patches, out, decisions=None, provider=N
             or extension.get("version")
         )
         target = target_versions.get(package)
+        is_tb_megamenu_v3 = False
+        if name == "tb_megamenu":
+            c_ver = str(current or "")
+            c_t = semver_tuple(c_ver)
+            if (c_t and c_t[0] == 3) or c_ver.startswith("3.") or "3.0.0-alpha5" in c_ver:
+                is_tb_megamenu_v3 = True
+                if target and (str(target).startswith("1.") or (semver_tuple(target) and semver_tuple(target)[0] == 1)):
+                    target = None
         issues = scan.get(name, [])
         fixes = rector_changes.get(name, [])
         patch_group = patch_map.get(package, {}) if package else {}
@@ -357,6 +378,11 @@ def build(context, tool_checks, solver, patches, out, decisions=None, provider=N
                 }
             )
         release_candidates.extend(patch_group.get("releaseCandidates", []))
+        if is_tb_megamenu_v3:
+            release_candidates = [
+                rc for rc in release_candidates
+                if not (str(rc.get("version", "")).startswith("1.") or (semver_tuple(rc.get("version")) and semver_tuple(rc.get("version"))[0] == 1))
+            ]
         release_candidates = list(
             {
                 item["version"]: item
@@ -432,15 +458,19 @@ def build(context, tool_checks, solver, patches, out, decisions=None, provider=N
             status = "ready" if not extension.get("installed") else "update_available"
             recommended = "remove"
             evidence = "Contrib theme has no stable Drupal 11 release; defaulted to remove/uninstall instead of patch"
-        elif solver.get("status") == "passed" and package and target:
+        elif solver.get("status") == "passed" and package and target and not is_tb_megamenu_v3:
             status = "ready" if current == target and compatible_declared else "update_available"
             recommended = "compatible_release"
             evidence = "Disposable Composer Drupal 11 resolution"
         elif package and compatible_declared and not issues and not fixes:
-            if scanned:
+            if scanned or is_tb_megamenu_v3:
                 status = "ready"
                 recommended = "keep"
-                evidence = "Installed extension is compatible with Drupal 11"
+                evidence = (
+                    "tb_megamenu 3.0.0-alpha5 is already Drupal 11 compatible (^8 || ^9 || ^10 || ^11); retained on 3.x branch"
+                    if is_tb_megamenu_v3
+                    else "Installed extension is compatible with Drupal 11"
+                )
             else:
                 status = "update_available" if target and target != current else "ready"
                 recommended = "compatible_release" if target and target != current else "keep"
@@ -485,7 +515,7 @@ def build(context, tool_checks, solver, patches, out, decisions=None, provider=N
             if after == before
             else "older"
         )
-        if package and target and not (kind == "core" and name in removed_core):
+        if package and target and not (kind == "core" and name in removed_core) and not is_tb_megamenu_v3:
             if version_relation == "older":
                 status = "blocked"
                 recommended = "manual_remediation"
@@ -527,8 +557,31 @@ def build(context, tool_checks, solver, patches, out, decisions=None, provider=N
         is_automatic = (decisions.get(name, {}).get("origin") == "automatic") if supplied else True
         decision = dict(decisions.get(name, {}) or {})
         if not decision.get("action"):
-            decision = _safe_default(status, release_candidates, target, kind, fixes) or {}
+            if is_tb_megamenu_v3:
+                decision = {
+                    "action": "keep",
+                    "candidateId": None,
+                    "candidateVersion": current or "3.0.0-alpha5",
+                    "acceptRisk": False,
+                    "note": "tb_megamenu 3.0.0-alpha5 is already Drupal 11 compatible; retained on 3.x branch to prevent menu breakage from 1.x downgrade",
+                    "origin": "automatic",
+                }
+            else:
+                decision = _safe_default(status, release_candidates, target, kind, fixes) or {}
             is_automatic = True
+        elif is_tb_megamenu_v3 and decision.get("action") in ("compatible_release", "update_available"):
+            cand_v = str(decision.get("candidateVersion") or "")
+            cand_t = semver_tuple(cand_v)
+            if cand_v.startswith("1.") or (cand_t and cand_t[0] == 1) or not cand_v or cand_v == "3.0.0-alpha5":
+                decision = {
+                    "action": "keep",
+                    "candidateId": None,
+                    "candidateVersion": current or "3.0.0-alpha5",
+                    "acceptRisk": False,
+                    "note": "tb_megamenu 3.0.0-alpha5 is already Drupal 11 compatible; corrected from 1.x to keep to prevent mega menu breakage",
+                    "origin": "automatic",
+                }
+                is_automatic = True
         selected = decision.get("action")
         chosen_candidate = (
             decision.get("candidateVersion") if selected == "compatible_release" else None
@@ -950,6 +1003,15 @@ def validate_decisions(report, decisions):
             or item.get("action") not in DECISIONS
         ):
             raise ValueError("Unknown extension or compatibility action")
+        if item.get("name") == "tb_megamenu":
+            row_c = known["tb_megamenu"]
+            c_ver = str(row_c.get("currentVersion") or "")
+            if c_ver.startswith("3.") or "3.0.0-alpha5" in c_ver:
+                item["action"] = "keep"
+                item["candidateVersion"] = row_c.get("currentVersion") or "3.0.0-alpha5"
+                item["candidateId"] = None
+                item["acceptRisk"] = False
+                item["note"] = "tb_megamenu 3.0.0-alpha5 is retained on 3.x branch"
         if item["name"] in normalized:
             raise ValueError("Duplicate compatibility decision")
         if item.get("bulkSafe"):

@@ -911,7 +911,115 @@ class ProvusEcosystemProtectionTests(unittest.TestCase):
         self.assertIn("acquia_purge", splits_info["extensions"])
         self.assertEqual(splits_info["extensions"]["acquia_purge"], ["live"])
 
+    def test_version_tuple_parsing(self):
+        """semver_tuple handles prereleases, core prefixes, constraints; version_tuple stays strict."""
+        from d11.compatibility import semver_tuple, version_tuple
+
+        # semver_tuple handles prereleases, core prefixes, constraints, and plain semver.
+        self.assertEqual(semver_tuple("3.0.0-alpha5"), (3, 0, 0))
+        self.assertEqual(semver_tuple("^3.0@alpha"), (3, 0, 0))
+        self.assertEqual(semver_tuple("8.x-1.10"), (1, 10, 0))
+        self.assertEqual(semver_tuple("^1.10"), (1, 10, 0))
+        self.assertEqual(semver_tuple("1.10.0"), (1, 10, 0))
+        self.assertEqual(semver_tuple("v2.4.1"), (2, 4, 1))
+        self.assertIsNone(semver_tuple("dev-main"))
+        self.assertIsNone(semver_tuple(""))
+
+        # version_tuple strictly handles standard semver (preserving test_hybrid expectations)
+        self.assertEqual(version_tuple("1.10.0"), (1, 10, 0))
+        self.assertEqual(version_tuple("2.4.1"), (2, 4, 1))
+        self.assertEqual(version_tuple("v2.4"), (2, 4, 0))
+        self.assertIsNone(version_tuple("2.1.0-beta1"))
+        self.assertIsNone(version_tuple("3.0.0-alpha5"))
+
+    def test_tb_megamenu_v3_defaults_to_keep_and_never_downgrades_to_v1(self):
+        """tb_megamenu 3.0.0-alpha5 / 3.x must default to keep and never downgrade to 1.x."""
+        from d11.compatibility import build
+        from d11.auto_decide import auto_decide as auto_decide_run, DECISION_RULES
+
+        context = {
+            "roots": {"composer": str(self.root), "custom": [], "config": None},
+            "composer": {"packages": [{"name": "drupal/tb_megamenu", "version": "3.0.0-alpha5"}]},
+            "extensions": [
+                {
+                    "name": "tb_megamenu",
+                    "type": "module",
+                    "path": str(self.root / "web/modules/contrib/tb_megamenu/tb_megamenu.info.yml"),
+                    "package": "drupal/tb_megamenu",
+                    "installed": True,
+                    "exported": True,
+                    "coreConstraint": "^8 || ^9 || ^10 || ^11",
+                    "dependencies": [],
+                }
+            ],
+            "runtime": {"status": "collected", "commands": {"status": {"data": {"drupal-version": "10.4.0"}}}},
+            "deployment": {"status": "unknown", "observations": []},
+            "removedCoreDependencies": [],
+            "git": {"head": {"stdout": "abc"}, "dirty": {"stdout": ""}},
+        }
+        checks = [
+            {"id": "upgrade_status", "status": "passed", "issues": [], "findingCount": 0},
+            {"id": "drupal_rector", "status": "passed", "changes": [], "findingCount": 0},
+            {"id": "module_impact", "status": "passed", "modules": {}},
+        ]
+        solver = {"status": "passed", "exactCoreVersion": "11.4.0", "versions": {}, "changes": []}
+        patches = {
+            "status": "searched",
+            "packages": [
+                {
+                    "package": "drupal/tb_megamenu",
+                    "releaseCandidates": [
+                        {"version": "1.10", "drupalOrgVersion": "8.x-1.10", "stability": "stable"},
+                        {"version": "3.0.0-alpha5", "drupalOrgVersion": "3.0.0-alpha5", "stability": "prerelease"},
+                    ],
+                }
+            ],
+        }
+
+        out = self.root / "run_tb"
+        out.mkdir(parents=True)
+        report = build(context, checks, solver, patches, out)
+
+        ext = report["extensions"][0]
+        self.assertEqual(ext["name"], "tb_megamenu")
+        self.assertEqual(ext["status"], "ready")
+        self.assertEqual(ext["recommendedAction"], "keep")
+        self.assertEqual(ext["decision"]["action"], "keep")
+        self.assertNotIn("1.10", [rc["version"] for rc in ext["releaseCandidates"]])
+
+        # Verify auto_decide rules for tb_megamenu
+        ctx = {
+            "existing": None,
+            "is_clean": True,
+            "is_provus": True,
+            "manual_proposal": out / "missing.json",
+            "patches": [],
+            "accept_prereleases": True,
+            "obsolete_modules": set(),
+            "replacements": {},
+        }
+        dec = None
+        for rule in DECISION_RULES:
+            dec = rule(ext, ctx)
+            if dec is not None:
+                break
+        self.assertIsNotNone(dec)
+        self.assertEqual(dec["action"], "keep")
+        self.assertEqual(dec["candidateVersion"], "3.0.0-alpha5")
+
+        # Verify stale operator decision with 1.x is corrected to keep
+        ctx_stale_op = dict(ctx, existing={"origin": "operator", "action": "compatible_release", "candidateVersion": "1.10"})
+        dec_fixed = None
+        for rule in DECISION_RULES:
+            dec_fixed = rule(ext, ctx_stale_op)
+            if dec_fixed is not None:
+                break
+        self.assertIsNotNone(dec_fixed)
+        self.assertEqual(dec_fixed["action"], "keep")
+        self.assertEqual(dec_fixed["candidateVersion"], "3.0.0-alpha5")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

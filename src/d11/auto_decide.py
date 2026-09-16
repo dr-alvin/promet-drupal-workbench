@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .auto_remediate import generate_remediation_proposals
 from .common import Problem, read, write
-from .compatibility import OBSOLETE_PERFORMANCE_MODULES, PROVUS_ECOSYSTEM_MODULES, REMOVED_CORE_TO_CONTRIB, is_provus_project, semver_match, version_tuple
+from .compatibility import OBSOLETE_PERFORMANCE_MODULES, PROVUS_ECOSYSTEM_MODULES, REMOVED_CORE_TO_CONTRIB, is_provus_project, semver_match, semver_tuple, version_tuple
 from .knowledge import get_obsolete_modules, get_replacements
 from .patches import is_d11_compatible
 from .two_gate import compatibility_report, decide
@@ -31,6 +31,22 @@ def rule_operator_override(ext: dict, ctx: dict) -> dict | None:
         and (existing["action"] != "keep" or is_clean)
         and has_valid_patch
     ):
+        if ext.get("name") == "tb_megamenu":
+            c_ver = str(ext.get("currentVersion") or "")
+            c_t = semver_tuple(c_ver)
+            if (c_t and c_t[0] == 3) or c_ver.startswith("3.") or "3.0.0-alpha5" in c_ver:
+                cand_v = str(existing.get("candidateVersion") or "")
+                cand_t = semver_tuple(cand_v)
+                if cand_v.startswith("1.") or (cand_t and cand_t[0] == 1) or existing.get("action") == "compatible_release":
+                    return {
+                        "name": "tb_megamenu",
+                        "action": "keep",
+                        "candidateId": None,
+                        "candidateVersion": ext.get("currentVersion") or "3.0.0-alpha5",
+                        "acceptRisk": False,
+                        "note": "tb_megamenu 3.0.0-alpha5 is already Drupal 11 compatible; corrected from 1.x to keep to prevent mega menu breakage",
+                        "origin": "automatic",
+                    }
         action = existing["action"]
         cand_ver = existing.get("candidateVersion") or target
         rc_candidates = [rc.get("version") for rc in ext.get("releaseCandidates", []) if rc.get("version")]
@@ -58,6 +74,28 @@ def rule_operator_override(ext: dict, ctx: dict) -> dict | None:
             "note": existing.get("note") or "Preserved reviewed operator decision",
             "origin": "operator",
         }
+    return None
+
+
+def rule_tb_megamenu(ext: dict, ctx: dict) -> dict | None:
+    """tb_megamenu 3.0.0-alpha5 / 3.x must default to keep and never downgrade to 1.x.
+
+    1.x releases (8.x-1.10) break the site's mega menu configuration when upgrading from 3.x.
+    Since 3.0.0-alpha5 is already Drupal 11 compatible (^8 || ^9 || ^10 || ^11), it must be kept on 3.x.
+    """
+    if ext.get("name") == "tb_megamenu":
+        c_ver = str(ext.get("currentVersion") or "")
+        c_t = semver_tuple(c_ver)
+        if (c_t and c_t[0] == 3) or c_ver.startswith("3.") or "3.0.0-alpha5" in c_ver:
+            return {
+                "name": "tb_megamenu",
+                "action": "keep",
+                "candidateId": None,
+                "candidateVersion": ext.get("currentVersion") or "3.0.0-alpha5",
+                "acceptRisk": False,
+                "note": "tb_megamenu 3.0.0-alpha5 is already Drupal 11 compatible; retained on 3.x branch to prevent menu breakage from 1.x downgrade",
+                "origin": "automatic",
+            }
     return None
 
 
@@ -452,6 +490,7 @@ def rule_defer_with_blocker(ext: dict, ctx: dict) -> dict | None:
 
 DECISION_RULES = [
     rule_operator_override,
+    rule_tb_megamenu,             # tb_megamenu 3.0.0-alpha5: keep 3.x to prevent menu breakage from 1.x
     rule_removed_core_bridge,
     rule_provus_ecosystem,      # Provus ecosystem deps: never auto-remove
     rule_config_split_protection, # Config split deps (e.g. live split): never auto-remove

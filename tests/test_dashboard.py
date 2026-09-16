@@ -334,6 +334,10 @@ class DashboardTests(unittest.TestCase):
             mock_capture.assert_called_once()
             self.assertTrue(r_cap.json()["baselineCaptured"])
 
+        r_sum_after = client.get("/api/runs/audit_run/quick-summary")
+        self.assertEqual(r_sum_after.status_code, 200)
+        self.assertTrue(r_sum_after.json()["baselineCaptured"])
+
     def test_terminal_api_endpoints(self):
         client = TestClient(create_app(self.home), base_url="http://127.0.0.1:8765")
         r_bad = client.post(

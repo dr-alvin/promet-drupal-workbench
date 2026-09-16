@@ -833,6 +833,13 @@ def _rebuild_after_decisions(w, rid, out, state, decisions):
             continue
         if decision["action"] == "compatible_release" and rows[name].get("package"):
             version = decision.get("candidateVersion") or rows[name].get("targetVersion")
+            if name == "tb_megamenu":
+                c_ver = str(rows[name].get("currentVersion") or "")
+                c_t = version_tuple(c_ver)
+                if (c_t and c_t[0] == 3) or c_ver.startswith("3.") or "3.0.0-alpha5" in c_ver:
+                    v_t = version_tuple(version)
+                    if str(version).startswith("1.") or (v_t and v_t[0] == 1):
+                        continue
             if version == "dev":
                 for rc in rows[name].get("releaseCandidates", []):
                     if rc.get("version") and rc.get("version") != "dev":
@@ -2206,6 +2213,7 @@ def capture_run_baseline(w, rid):
         w.report(rid)
     except Exception:
         pass
+    (out / "quick-summary.json").unlink(missing_ok=True)
     route_count = len(list((out / "visual").rglob("*.png"))) if (out / "visual").is_dir() else 0
     return {"status": "completed", "baselineCaptured": True, "routeCount": route_count}
 

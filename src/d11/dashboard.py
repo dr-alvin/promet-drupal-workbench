@@ -654,9 +654,16 @@ def create_app(home=None, port=8765):
     def quick_summary(rid):
         out, _ = service.run(rid)
         qs_file = out / "quick-summary.json"
-        if qs_file.is_file():
+        state_data = read(out / "state.json") if (out / "state.json").is_file() else {}
+        is_capturing = state_data.get("checkpoint") == "capturing_baseline"
+        if qs_file.is_file() and not is_capturing:
             try:
-                return read(qs_file)
+                cached = read(qs_file)
+                if not cached.get("baselineCaptured"):
+                    if state_data.get("checkpoint") == "baseline_captured" or ((out / "visual").is_dir() and any((out / "visual").rglob("*.png"))):
+                        cached = None
+                if cached is not None:
+                    return cached
             except Exception:
                 pass
         gate = read(out / "gate.json") if (out / "gate.json").is_file() else {}
@@ -765,6 +772,7 @@ def create_app(home=None, port=8765):
             "headerCount": gate_baseline.get("headerCount", 0),
             "footerCount": gate_baseline.get("footerCount", 0),
             "baselineCaptured": has_baseline,
+            "baselineCapturing": state_data.get("checkpoint") == "capturing_baseline",
             "baselineScreenshotCount": screenshot_count,
         }
         try:
@@ -776,7 +784,13 @@ def create_app(home=None, port=8765):
     @app.post("/api/runs/{rid}/capture-baseline")
     def capture_baseline_endpoint(rid: str):
         from .two_gate import capture_run_baseline
-        return capture_run_baseline(service, rid)
+        res = capture_run_baseline(service, rid)
+        try:
+            out, _ = service.run(rid)
+            (out / "quick-summary.json").unlink(missing_ok=True)
+        except Exception:
+            pass
+        return res
 
     @app.post("/api/runs/{rid}/ai-patch")
     async def ai_patch(rid, request: Request):
@@ -899,7 +913,15 @@ def create_app(home=None, port=8765):
                         and not (ext.get("upgradeStatus") or {}).get("issueCount")
                         and not (ext.get("rector") or {}).get("fixableCount")
                     )
-                    if d_copy.get("action") == "keep" and not is_clean:
+                    if name == "tb_megamenu":
+                        c_ver = str(ext.get("currentVersion") or "")
+                        if c_ver.startswith("3.") or "3.0.0-alpha5" in c_ver:
+                            d_copy["action"] = "keep"
+                            d_copy["candidateVersion"] = ext.get("currentVersion") or "3.0.0-alpha5"
+                            d_copy["candidateId"] = None
+                            d_copy["acceptRisk"] = False
+                            d_copy["note"] = "tb_megamenu 3.0.0-alpha5 is retained on 3.x branch"
+                    elif d_copy.get("action") == "keep" and not is_clean:
                         target_ver = ext.get("targetVersion") or ext.get("currentVersion")
                         d_copy["action"] = "compatible_release"
                         d_copy["candidateVersion"] = target_ver

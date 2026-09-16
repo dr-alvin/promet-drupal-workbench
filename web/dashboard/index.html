@@ -653,41 +653,93 @@
               <span class="exec-icon">
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-circle"></use></svg>
               </span>
-              <div>
-                <strong>1. Pre-Upgrade Backup &amp; Baseline Checkpoint</strong>
-                <p class="muted">Pre-upgrade database backup (pre-upgrade.sql.gz) and Git commit checkpoint verified.</p>
+              <div class="exec-step-content">
+                <div class="exec-step-header">
+                  <strong>1. Pre-Upgrade Backup &amp; Baseline Checkpoint</strong>
+                  <span class="step-badge badge muted" id="badge-exec-env">Pending</span>
+                </div>
+                <p class="muted exec-desc">Pre-upgrade database backup (pre-upgrade.sql.gz) and Git commit checkpoint verified.</p>
+                <div class="exec-detail" id="detail-exec-env" style="display:none;"></div>
               </div>
             </div>
             <div class="exec-step" id="step-exec-custom">
               <span class="exec-icon">
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-circle"></use></svg>
               </span>
-              <div>
-                <strong>2. Custom Code &amp; Deprecation Fixes</strong>
-                <p class="muted">Applied Rector rules, info.yml core_version_requirement updated to ^10 || ^11.</p>
+              <div class="exec-step-content">
+                <div class="exec-step-header">
+                  <strong>2. Custom Code &amp; Deprecation Fixes</strong>
+                  <span class="step-badge badge muted" id="badge-exec-custom">Pending</span>
+                </div>
+                <p class="muted exec-desc">Applied Rector rules, info.yml core_version_requirement updated to ^10 || ^11.</p>
+                <div class="exec-detail" id="detail-exec-custom" style="display:none;"></div>
               </div>
             </div>
             <div class="exec-step" id="step-exec-composer">
               <span class="exec-icon">
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-circle"></use></svg>
               </span>
-              <div>
-                <strong>3. Composer Package Upgrade</strong>
-                <p class="muted">Upgrading drupal/core-recommended to Drupal 11, resolving contrib dependencies &amp; patches.</p>
+              <div class="exec-step-content">
+                <div class="exec-step-header">
+                  <strong>3. Composer Package Upgrade</strong>
+                  <span class="step-badge badge muted" id="badge-exec-composer">Pending</span>
+                </div>
+                <p class="muted exec-desc">Upgrading drupal/core-recommended to Drupal 11, resolving contrib dependencies &amp; patches.</p>
+                <div class="exec-detail" id="detail-exec-composer" style="display:none;"></div>
               </div>
             </div>
             <div class="exec-step" id="step-exec-db">
               <span class="exec-icon">
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-circle"></use></svg>
               </span>
-              <div>
-                <strong>4. Database Schema Migrations &amp; Cache Clear</strong>
-                <p class="muted">Running drush updb -y, drush cr, and verifying post-upgrade site boot.</p>
+              <div class="exec-step-content">
+                <div class="exec-step-header">
+                  <strong>4. Database Schema Migrations &amp; Cache Clear</strong>
+                  <span class="step-badge badge muted" id="badge-exec-db">Pending</span>
+                </div>
+                <p class="muted exec-desc">Running drush updb -y, drush cr, and verifying post-upgrade site boot.</p>
+                <div class="exec-detail" id="detail-exec-db" style="display:none;"></div>
               </div>
             </div>
           </div>
 
           <div id="upgrade-active-status" class="status-alert" style="margin-top:12px;"></div>
+
+          <!-- Embedded Real-Time Activity Feed for Upgrade Execution -->
+          <div id="stage-upgrade-console-card" class="stage-console-card" style="margin-top:14px;">
+            <div id="stage-upgrade-console-toggle" class="stage-console-header" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md) var(--radius-md) 0 0;cursor:pointer;">
+              <span style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg> Live Execution Activity Stream
+              </span>
+              <span id="stage-upgrade-log-count" class="muted" style="font-size:12px;">0 events</span>
+            </div>
+            <pre id="stage-upgrade-console" class="console-output" style="margin:0;border-radius:0 0 var(--radius-md) var(--radius-md);max-height:180px;"></pre>
+          </div>
+
+          <!-- Completion Action Banner -->
+          <div id="upgrade-complete-actions" class="upgrade-complete-card" style="display:none;margin-top:16px;">
+            <div style="background:var(--emerald-bg, rgba(16,185,129,0.08));border:1px solid var(--emerald-border, #10b981);border-radius:var(--radius-lg);padding:18px 22px;">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                <svg class="ui-icon" style="color:var(--emerald-600);width:22px;height:22px;" aria-hidden="true"><use href="#icon-shield-check"></use></svg>
+                <h3 style="margin:0;font-size:16px;color:var(--text-main);font-weight:700;">Drupal 11 Upgrade Rehearsal Complete!</h3>
+              </div>
+              <p style="margin:0 0 14px;font-size:13.5px;color:var(--text-secondary);line-height:1.5;">
+                Custom code deprecations resolved, packages upgraded to Drupal 11.x, schema migrations applied, and site bootstrap verified. You can now compare visual regression diffs or preview the live site.
+              </p>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <button id="btn-goto-regression" class="primary" type="button" style="display:inline-flex;align-items:center;gap:6px;">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-layers"></use></svg> Proceed to Step 04: Visual Regression Review →
+                </button>
+                <button id="btn-open-site-stage3" class="secondary" type="button" style="display:inline-flex;align-items:center;gap:6px;">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-external-link"></use></svg> Open Upgraded Site
+                </button>
+                <button id="btn-rollback-stage3" class="danger" type="button" style="display:inline-flex;align-items:center;gap:6px;">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-rotate-ccw"></use></svg> Roll Back to Pre-Upgrade State
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div id="ai-doctor-panel" style="display:none;margin-top:16px;"></div>
         </section>
 
