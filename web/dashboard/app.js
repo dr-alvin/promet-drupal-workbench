@@ -214,9 +214,18 @@ function showStage(stageName,isUserAction=false){
  if(isUserAction && !stepEnabled[stageName])return;
   if(isUserAction){
     userSelectedStage=true;
-    try { history.replaceState(null, '', '#' + stageName); } catch(_e) {}
   }
   currentStage=stageName;
+  // Keep the URL on the stage actually being shown, including stage changes the
+  // app makes itself (starting an upgrade, an active run pulling the view to
+  // its stage). Previously only explicit clicks wrote the hash, so after
+  // "Confirm & Start Upgrade" the view moved to Upgrade while the address bar
+  // still read #plan, and a reload bounced the operator back to Plan.
+  try {
+    if((window.location.hash || '').replace('#stage-', '').replace('#', '') !== stageName){
+      history.replaceState(null, '', '#' + stageName);
+    }
+  } catch(_e) {}
  for(const s of STAGES){
   const stageNode=$('stage-'+s);
   if(stageNode)stageNode.hidden=(s!==stageName);
@@ -2364,7 +2373,7 @@ function updateQuickSummary(){
    if($('plan-risk-badge')) $('plan-risk-badge').textContent = 'Verified';
    if($('plan-risk-detail-blockers')) $('plan-risk-detail-blockers').innerHTML = `<strong>Resolved Blockers:</strong> ${blockerCount}`;
    if($('plan-risk-detail-isolation')) $('plan-risk-detail-isolation').innerHTML = '<strong>DB Snapshot:</strong> pre-upgrade.sql.gz retained';
-   if($('plan-risk-detail-repo')) $('plan-risk-detail-repo').innerHTML = '<strong>Rollback:</strong> Instant · available at any time';
+   if($('plan-risk-detail-repo')) $('plan-risk-detail-repo').innerHTML = '<strong>Rollback:</strong> Available at any time';
 
    // Card 3: "Timeline & Scope" → "Upgrade Summary"
    const c3 = $('plan-card3-title');
@@ -2376,7 +2385,7 @@ function updateQuickSummary(){
     const manualHours = qs?.timeline?.manualReviewHours||0;
     $('plan-timeline-detail-manual').innerHTML = `<strong>Custom Fixes Applied:</strong> ${manualHours} hour${manualHours!==1?'s':''}`;
    }
-   if($('plan-timeline-detail-rollback')) $('plan-timeline-detail-rollback').innerHTML = '<strong>Rollback Duration:</strong> Instant (&lt; 30s)';
+   if($('plan-timeline-detail-rollback')) $('plan-timeline-detail-rollback').innerHTML = '<strong>Rollback Duration:</strong> Under 5 minutes';
    if($('plan-timeline-detail-handoff')) $('plan-timeline-detail-handoff').innerHTML = '<strong>Git Handoff:</strong> Developer commits &amp; pushes manually';
 
    // Compatibility matrix: relabel section header
@@ -2413,7 +2422,7 @@ function updateQuickSummary(){
    if(c3) c3.innerHTML = '<svg class="ui-icon" aria-hidden="true"><use href="#icon-clock"></use></svg> Timeline &amp; Scope';
    if($('plan-est-label')) $('plan-est-label').textContent = 'Estimated Automation Time';
    if($('plan-timeline-detail-manual')) $('plan-timeline-detail-manual').innerHTML = `<strong>Manual Code Fixes:</strong> <span id="plan-manual-effort">${manualHours} hour${manualHours !== 1 ? 's' : ''}</span>`;
-   if($('plan-timeline-detail-rollback')) $('plan-timeline-detail-rollback').innerHTML = '<strong>Rollback Duration:</strong> Instant (&lt; 30s)';
+   if($('plan-timeline-detail-rollback')) $('plan-timeline-detail-rollback').innerHTML = '<strong>Rollback Duration:</strong> Under 5 minutes';
    if($('plan-timeline-detail-handoff')) $('plan-timeline-detail-handoff').innerHTML = '<strong>Git Handoff:</strong> Developer commits &amp; pushes manually';
 
    const compatLabel = $('plan-compat-summary-label');
@@ -3545,6 +3554,10 @@ async function executeConfirmedUpgrade() {
     showStage('upgrade', true);
     report = null;
     await refresh();
+    // The Upgrade step is gated on an existing audit/upgrade run, so the call
+    // above can be refused when `runs` has not caught up with the run we just
+    // started. Re-assert once refresh has loaded it.
+    showStage('upgrade', true);
   } catch (err) {
     isStartingUpgrade = false;
     clearInterval(upgradeTimer);

@@ -766,7 +766,7 @@ def create_app(home=None, port=8765):
                 "manualReviewHours": 0
                 if not gate_hard_blockers
                 else len(gate_hard_blockers) * 2,
-                "rollbackSeconds": "30 seconds",
+                "rollbackSeconds": "under 5 minutes",
             },
             "baselineRoutes": gate_baseline.get("selected", 0),
             "headerCount": gate_baseline.get("headerCount", 0),

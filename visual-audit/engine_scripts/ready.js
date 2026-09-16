@@ -1,5 +1,6 @@
 'use strict';
 const fs=require('fs');
+const evidence=require('./evidence');
 async function steps(page,items) {
   for(const x of items||[]) {
     const loc=page.locator(x.selector);
@@ -165,7 +166,7 @@ module.exports=async(page,scenario)=>{
     try{await page.evaluate(freezeMedia);}catch{}
     await page.evaluate(()=>{document.documentElement.style.scrollBehavior='auto';document.body.style.scrollBehavior='auto';window.scrollTo({top:0,left:0,behavior:'instant'});});
     await page.waitForTimeout(200);
-    fs.appendFileSync(scenario.auditWork+'/image-coverage.jsonl',JSON.stringify({id:s.id,...coverage})+'\n');
+    evidence.record(scenario.auditWork,'image-coverage',{id:s.id,...coverage});
     const imageUrls=await page.evaluate(()=>Array.from(document.images).map(i=>i.currentSrc||i.src));
     const hiddenOnly=url=>imageUrls.includes(url)&&!coverage.covered.some(i=>imageUrls[i.index]===url);
     // Reject HTTP 4xx/5xx main document responses in all modes (reference and test)
@@ -205,7 +206,7 @@ module.exports=async(page,scenario)=>{
 
   } catch(e) {
     if(s.cleanup?.length) { try {await steps(page,s.cleanup);} catch(cleanupError) {e.message+='; cleanup failed: '+cleanupError.message;} }
-    fs.appendFileSync(scenario.auditWork+'/functional-failures.jsonl',JSON.stringify({id:s.id,status:'functional_failure',message:e.message,imageCoverage:e.imageCoverage})+'\n');
+    evidence.record(scenario.auditWork,'functional-failures',{id:s.id,status:'functional_failure',message:e.message,imageCoverage:e.imageCoverage});
     throw e;
   }
 };

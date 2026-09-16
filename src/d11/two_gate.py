@@ -2074,6 +2074,39 @@ def upgrade(w, pid, audit_id, out, state):
             return {"rolledBack": False}
     state["checkpoint"] = "post_upgrade_verification"
     write(out / "state.json", state)
+    # Ask Drupal whether it considers itself healthy. Composer resolving cleanly
+    # says nothing about Drupal's own .info.yml dependency graph, which Composer
+    # never sees, so an upgrade can finish "successfully" on a site Drupal
+    # reports as broken. This runs before the visual capture: there is no value
+    # in screenshotting a site whose dependencies do not resolve.
+    try:
+        from .drupal_health import check as drupal_health_check
+
+        health = drupal_health_check(cfg, cfg.get("sourcePath") or p)
+        write(out / "drupal-health.json", health)
+        state["drupalHealth"] = health["status"]
+        if health.get("warnings"):
+            # Latent, not blocking: recorded so the report can surface it.
+            state["drupalHealthWarnings"] = health["warnings"]
+        if health["status"] == "failed":
+            state.update(
+                status="needs_attention",
+                checkpoint="gate_2_requirements_failed",
+                error="Drupal reports errors after upgrade: " + "; ".join(health["blockers"][:3]),
+                candidatePreserved=True,
+            )
+            write(out / "state.json", state)
+            try:
+                w.report(state["id"])
+            except Exception:
+                pass
+            return {"requirementsPassed": False, "blockers": health["blockers"]}
+    except Exception as exc:
+        # A failed health probe is missing evidence, not proof of health. Record
+        # it and continue to the visual gate rather than inventing a blocker.
+        state["drupalHealth"] = "unknown"
+        write(out / "drupal-health.json", {"status": "unknown", "message": str(exc)})
+    write(out / "state.json", state)
     if not skip_visual and cfg.get("visual"):
         try:
             if not (out / "visual-work").is_dir() and (audit_out / "visual-work").is_dir():

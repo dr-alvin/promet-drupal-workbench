@@ -1,5 +1,6 @@
 'use strict';
 const {url}=require('../scripts/scenarios');
+const evidence=require('./evidence');
 module.exports=async(page,scenario)=>{
   const config=scenario.auditConfig,s=scenario.auditScenario;
   const original=page.screenshot.bind(page);
@@ -10,12 +11,12 @@ module.exports=async(page,scenario)=>{
       const result=await original(opts);
       if(s.cleanup?.length) {
         await require('./ready').steps(page,s.cleanup);
-        fs.appendFileSync(scenario.auditWork+'/cleanup.jsonl',JSON.stringify({id:s.id,status:'passed'})+'\n');
+        evidence.record(scenario.auditWork,'cleanup',{id:s.id,status:'passed'});
       }
-      fs.appendFileSync(scenario.auditWork+'/valid-captures.jsonl',JSON.stringify({id:s.id,status:'passed'})+'\n');
+      evidence.record(scenario.auditWork,'valid-captures',{id:s.id,status:'passed'});
       return result;
     } catch(e) {
-      fs.appendFileSync(scenario.auditWork+'/functional-failures.jsonl',JSON.stringify({id:s.id,status:'capture_failure',message:'Screenshot or cleanup failed'})+'\n');
+      evidence.record(scenario.auditWork,'functional-failures',{id:s.id,status:'capture_failure',message:'Screenshot or cleanup failed'});
       throw e;
     }
   };

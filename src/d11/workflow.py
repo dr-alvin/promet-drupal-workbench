@@ -27,7 +27,9 @@ from .common import (
     redact_tree,
     write,
 )
+from . import baseline_cache
 from .intake import import_snapshot, inventory, safe_path
+from .visual_audit import image_tag
 from .proposals import PROPOSAL_SCHEMA, validate_proposal
 
 HOME = get_d11_home()
@@ -1265,6 +1267,50 @@ class Workflow:
             self.event(out, "finished", status=s["status"])
             self.report(rid)
 
+    def _baseline_cache_settings(self, cfg):
+        """Resolve cache policy. Env wins so a run can always be forced fresh."""
+        visual = cfg.get("visual") or {}
+        enabled = visual.get("baselineCache", True)
+        env = os.environ.get("D11_BASELINE_CACHE")
+        if env is not None:
+            enabled = env not in ("0", "false", "no")
+        ttl = visual.get("baselineCacheTtlSeconds", baseline_cache.DEFAULT_TTL_SECONDS)
+        try:
+            ttl = float(os.environ.get("D11_BASELINE_CACHE_TTL", ttl))
+        except (TypeError, ValueError):
+            ttl = baseline_cache.DEFAULT_TTL_SECONDS
+        return bool(enabled), ttl
+
+    def _reuse_baseline(self, p, cfg, vc, vo):
+        """Return restore metadata when a stored baseline is safely replayable."""
+        enabled, ttl = self._baseline_cache_settings(cfg)
+        if not enabled:
+            return None
+        source = cfg.get("sourcePath")
+        try:
+            # An uncommitted working tree means the commit no longer describes
+            # what is deployed, so the cache key would be a lie.
+            if baseline_cache.working_tree_dirty(source):
+                return None
+            key = baseline_cache.fingerprint(image_tag(), vc, source)
+            return baseline_cache.restore(p, key, vo, ttl)
+        except Exception:
+            # Caching is an optimisation; never let it break a capture.
+            return None
+
+    def _store_baseline(self, p, cfg, vc, vo):
+        enabled, _ = self._baseline_cache_settings(cfg)
+        if not enabled:
+            return
+        source = cfg.get("sourcePath")
+        try:
+            if baseline_cache.working_tree_dirty(source):
+                return
+            key = baseline_cache.fingerprint(image_tag(), vc, source)
+            baseline_cache.store(p, key, vo)
+        except Exception:
+            return
+
     def capture(self, p, cfg, out, mode):
         p = Path(p)
         out = Path(out)
@@ -1278,6 +1324,26 @@ class Workflow:
                 shutil.rmtree(vo, ignore_errors=True)
             if (Path(out) / "visual").exists():
                 shutil.rmtree(Path(out) / "visual", ignore_errors=True)
+            # Baseline capture is the most expensive phase of an audit and is
+            # repeated in full on every run. Replay a stored baseline when every
+            # tracked input still matches; see baseline_cache for the safety
+            # properties (hash-verified, TTL-bounded, fails closed).
+            reuse = self._reuse_baseline(p, cfg, vc, vo)
+            if reuse:
+                self.event(
+                    Path(out),
+                    "baseline-reused",
+                    key=reuse["key"][:12],
+                    ageSeconds=reuse["ageSeconds"],
+                    images=reuse.get("imageCount"),
+                )
+                write(Path(out) / "baseline-reuse.json", reuse)
+                for f in vo.rglob("*"):
+                    if f.is_file() and not f.is_symlink():
+                        dest = Path(out) / "visual" / f.relative_to(vo)
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(f, dest)
+                return
         if mode == "test" and not vo.exists():
             legacy = safe_path(p, visual["output"])
             if legacy.exists():
@@ -1326,6 +1392,11 @@ class Workflow:
             raise Problem(
                 f"Browser verification failed{summary_err}; diagnostic images and coverage remain available in Reports"
             )
+        # Only reached when the capture succeeded. store() additionally refuses
+        # anything the run did not mark stable, so an unproven baseline is never
+        # cached for replay.
+        if mode == "reference":
+            self._store_baseline(p, cfg, vc, vo)
 
     def report(self, rid):
         out, s = self.run(rid)

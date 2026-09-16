@@ -9,7 +9,7 @@ from d11lib.common import Problem, digest, write
 from d11lib.dashboard import create_app
 from d11lib.patches import _blockers
 from d11lib.risk import evaluate, finding
-from d11lib.routes import scenarios, select
+from d11lib.routes import MOBILE_ROUTES, scenarios, select
 from d11lib.two_gate import _approved_batch_manifest, automation_eligibility, delivery_forecast
 from d11lib.workflow import Workflow
 from fastapi.testclient import TestClient
@@ -150,10 +150,38 @@ class TwoGateTests(unittest.TestCase):
             "http://site",
             "network",
         )
-        self.assertEqual(len(catalog["scenarios"]), 120)
+        # Desktop mirrors every route; mobile is sampled (critical routes plus an
+        # even spread) rather than duplicating the whole catalogue at a second
+        # viewport. See routes.mobile_selection.
+        desktop = [s for s in catalog["scenarios"] if s["id"].startswith("desktop-")]
+        mobile = [s for s in catalog["scenarios"] if s["id"].startswith("mobile-")]
+        self.assertEqual(len(desktop), 100)
+        self.assertEqual(len(mobile), MOBILE_ROUTES)
+        self.assertEqual(len(catalog["scenarios"]), 100 + MOBILE_ROUTES)
+        # Every critical route must still be exercised at mobile width.
+        critical_paths = {s["path"] for s in desktop if s["critical"]}
+        self.assertTrue(critical_paths <= {s["path"] for s in mobile})
         self.assertEqual(catalog["scenarios"][0]["viewport"], {"width": 1440, "height": 900})
         self.assertEqual(catalog["scenarios"][-1]["viewport"], {"width": 390, "height": 844})
         self.assertEqual(catalog["scenarios"][0]["requiredElements"], ["body"])
+
+    def test_mobile_cap_controls_second_viewport_coverage(self):
+        routes = ["/"] + [f"/page/{i}" for i in range(14)]
+        env = {"id": "local", "kind": "local", "authorized": True}
+        mobile_ids = lambda cap: [  # noqa: E731
+            s
+            for s in scenarios(routes, env, "http://site", "http://site", "net", mobile_cap=cap)[
+                "scenarios"
+            ]
+            if s["id"].startswith("mobile-")
+        ]
+        self.assertEqual(len(mobile_ids(0)), 0)
+        self.assertEqual(len(mobile_ids(3)), 3)
+        # A cap at or above the catalogue size restores full mirroring.
+        self.assertEqual(len(mobile_ids(len(routes))), len(routes))
+        self.assertEqual(len(mobile_ids(999)), len(routes))
+        # Critical routes survive even the tightest non-zero cap.
+        self.assertIn("/", [s["path"] for s in mobile_ids(1)])
         with self.assertRaises(Problem):
             select(["https://external.test/page"], "https://site.test")
 

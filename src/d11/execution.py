@@ -10,6 +10,7 @@ from pathlib import Path
 from .budget import budget_model, enforce_budget
 from .common import *
 from .discovery import config_diff, find_roots, runtime_discovery, wrapper
+from .drupal_health import composer_source_fallbacks
 from .knowledge import get_source_floor
 
 STAGES = [
@@ -496,6 +497,30 @@ def execute(cfg, p, approval, output, resume=False, preparation=False):
             if is_uninstall_noop:
                 record["command"]["status"] = "passed"
                 record["command"]["executionStatus"] = "passed"
+            # Composer exits 0 after falling back from dist to a git clone, but
+            # git checkouts lack drupal.org's packaging footer, so Drupal loses
+            # the version metadata every constrained dependency is checked
+            # against. Catching it here reports the real cause at the moment it
+            # happens, instead of surfacing later as unrelated-looking
+            # "unresolved dependency" errors in the status report.
+            if record["command"]["status"] == "passed" and "composer" in " ".join(step["argv"]):
+                fallbacks = composer_source_fallbacks(
+                    (record["command"].get("stdout") or "")
+                    + "\n"
+                    + (record["command"].get("stderr") or "")
+                )
+                if fallbacks:
+                    record["sourceFallbacks"] = fallbacks
+                    record["command"]["status"] = "failed"
+                    record["command"]["failureCategory"] = "composer_source_fallback"
+                    record["command"]["message"] = (
+                        "Composer installed from git source after a dist download failure: "
+                        + ", ".join(fallbacks)
+                        + ". These lack drupal.org packaging metadata (no version in .info.yml), "
+                        "which breaks Drupal dependency resolution. Re-run with a working "
+                        "connection, or repair with: composer reinstall --prefer-dist "
+                        + " ".join(fallbacks)
+                    )
             record["postconditions"] = []
             if record["command"]["status"] == "passed":
                 record["postconditions"] = [

@@ -6,7 +6,36 @@ The digest-pinned BackstopJS 6.3.25 container supplies Node, Playwright and Chro
 
 Compose runs with the invoking UID/GID, a writable temporary HOME/cache, an init process and 1 GB shared memory. Chromium sandboxing is enabled by default. Root cannot launch it; use a non-root host UID. `browserSandbox:false` is allowed only with a documented `sandboxExceptionReason` after investigating the selected platform. It is not needed in the tested macOS ARM64 configuration.
 
-Baseline settings record scenario definitions, role settings, locale, timezone, engine/image, architecture and browser-helper implementation hashes. Reference image hashes are checked before comparison. Changing them requires a new baseline. Same-dimension comparison is always required; this is not a pixel-height tolerance. Thresholds are mismatch percentages and must be tuned to the project; the example uses 0.1 percent.
+Baseline settings record scenario definitions, role settings, locale, timezone, engine/image, architecture, stability coverage and browser-helper implementation hashes. Reference image hashes are checked before comparison. Changing them requires a new baseline. Thresholds are mismatch percentages and must be tuned to the project; the example uses 0.1 percent.
+
+Captures are **not** required to share dimensions: `requireSameDimensions` defaults to false, so only the overlapping region is compared and a page that grew taller has its extra content silently left out of the pixel comparison. That gap is closed by the geometry review below, which reports a height change as its own finding rather than letting uncompared content read as agreement.
+
+## Comparison accuracy
+
+A single mismatch percentage cannot separate a page that re-rasterised slightly from a component that broke, and both routinely land in the same fraction of a percent. Two mechanisms address this.
+
+`ignoreAntialiasing` is enabled by default in `resembleOutputOptions`. Sub-pixel text rendering is the dominant source of false positives across a core upgrade, and suppressing it is what makes a tight threshold usable rather than forcing it to be loosened until real defects fit underneath.
+
+After comparison, `scripts/geometry-review.js` re-examines every pair that actually differs — Backstop's own MD5 fast path already proves byte-identical pairs, and those are skipped — and classifies the difference by where it is:
+
+| Verdict | Meaning | Effect |
+| :--- | :--- | :--- |
+| `localized` | a dense contiguous region changed (default: 4096px², a 64×64 block) | fails, even when the overall percentage is below threshold |
+| `widespread` | change spread across more than 2 percent of sampled pixels | fails |
+| `dimension` | capture height moved more than 24px, so part of the page was never compared | fails |
+| `diffuse` | scattered change with no substantial cluster | reported as likely noise |
+
+The review may **escalate** a pass to a failure; this is the point, since a broken control on a long page is a fraction of a percent and a flat threshold structurally cannot catch it. It does not downgrade a failure unless `diffGeometry.allowDiffuseDowngrade` is set explicitly. Thresholds live under `diffGeometry` (`localizedClusterPx`, `diffuseCeilingRatio`, `heightTolerancePx`, `cellSize`, `stride`, `channelTolerance`); `diffGeometry.enabled:false` turns the pass off. Findings are written to `diff-geometry.json` and embedded in `result.json`.
+
+## Capture cost
+
+Captures run at `asyncCaptureLimit` 4 by default (`AUDIT_ASYNC_CAPTURE_LIMIT`). Raising it further is bounded by the site container, not the browser; measure before changing it, because capture flake introduced by concurrency degrades accuracy silently.
+
+Baseline stability is proven by re-capturing against the same reference site. That repeat is **sampled** — every `critical` scenario plus an even spread, four by default — instead of duplicating the whole catalogue on every baseline. `stabilitySampleSize` sets the count and `stabilityFullRepeat:true` restores the exhaustive pass. Which scenarios were re-tested is recorded in `stabilityCoverage`, and the sampling policy is part of the baseline identity, so a baseline proven with a sample cannot silently satisfy a run that demands a full repeat.
+
+Mobile capture mirrors `critical` routes plus an even sample rather than every route at a second viewport (`MOBILE_ROUTES`, default 8; `mobile_cap` when building a catalogue). Pass a cap at or above the route count to restore full mirroring, or 0 to disable mobile capture.
+
+Baselines are cached per project under `baseline-cache/`, keyed on the visual-audit image tag (which hashes every engine script and helper), the visual configuration, the project commit and `composer.lock`. A cached baseline is replayed only when every stored image re-hashes to the manifest recorded at capture time; anything missing or altered discards the entry and forces a fresh capture. Entries expire after 24 hours and are never used when the working tree is dirty, because the commit no longer describes what is deployed. Note that **content changes are not fingerprinted** — editing a node changes the page without changing any tracked input, so a replayed baseline can be stale; this surfaces as a visual difference rather than hiding one. Set `D11_BASELINE_CACHE=0` (or `visual.baselineCache:false`) to disable, `D11_BASELINE_CACHE_TTL` to retune. Reuse is recorded in `baseline-reuse.json` and as a `baseline-reused` run event.
 
 ## Networking and TLS
 

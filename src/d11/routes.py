@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from .common import Problem, digest
 
 MAX_ROUTES = 100
-MOBILE_ROUTES = 20
+MOBILE_ROUTES = 8  # mobile mirrors: all critical routes plus an even sample
 
 ASSET_EXTENSIONS = (
     ".png",
@@ -415,10 +415,46 @@ DEFAULT_MASKS = [
     {"selector": "time", "reason": "Dynamic relative timestamps"},
     {"selector": ".copyright-year", "reason": "Dynamic copyright year element"},
     {"selector": "video", "reason": "Embedded video players"},
+    {"selector": "[data-drupal-messages]", "reason": "Transient Drupal status and error messages"},
+    {"selector": ".g-recaptcha", "reason": "reCAPTCHA challenge regenerates per request"},
+    {"selector": ".captcha", "reason": "CAPTCHA challenge regenerates per request"},
+    {"selector": "iframe[src*='youtube.com']", "reason": "Third-party video embed"},
+    {"selector": "iframe[src*='player.vimeo.com']", "reason": "Third-party video embed"},
+    {"selector": "iframe[src*='google.com/maps']", "reason": "Google Maps embed iframe"},
 ]
 
 
-def scenarios(routes, environment, reference, test, network, masks=None):
+def mobile_selection(desktop, cap=None):
+    """Pick which desktop scenarios to also capture at mobile width.
+
+    Mirroring every route at a second viewport doubles capture cost for a
+    diminishing return: most Drupal regressions surface identically at both
+    widths. Critical routes are always mirrored; the remainder is sampled
+    evenly so coverage stays spread across the catalogue instead of being
+    truncated to the first N routes. Pass cap=0 to disable mobile capture, or
+    a number >= len(desktop) to restore full mirroring.
+    """
+    limit = MOBILE_ROUTES if cap is None else int(cap)
+    if limit <= 0 or not desktop:
+        return []
+    if limit >= len(desktop):
+        return list(desktop)
+    critical = [d for d in desktop if d.get("critical")]
+    rest = [d for d in desktop if not d.get("critical")]
+    if len(critical) >= limit:
+        return critical[:limit]
+    room = limit - len(critical)
+    if room and rest:
+        step = len(rest) / room
+        sampled = [rest[min(len(rest) - 1, int(i * step))] for i in range(room)]
+    else:
+        sampled = []
+    chosen = {id(d): d for d in critical + sampled}
+    # Preserve catalogue order so mobile IDs track their desktop counterparts.
+    return [d for d in desktop if id(d) in chosen]
+
+
+def scenarios(routes, environment, reference, test, network, masks=None, mobile_cap=None):
     critical = {"/", "/user/login"}
     applied_masks = masks if masks is not None else DEFAULT_MASKS
     desktop = [
@@ -444,7 +480,7 @@ def scenarios(routes, environment, reference, test, network, masks=None):
             "label": item["path"] + " · mobile",
             "viewport": {"width": 390, "height": 844},
         }
-        for i, item in enumerate(desktop[:MOBILE_ROUTES])
+        for i, item in enumerate(mobile_selection(desktop, mobile_cap))
     ]
     result = {
         "environment": environment,

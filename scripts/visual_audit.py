@@ -204,7 +204,7 @@ def main():
             "AUDIT_REFERENCE_URL": a.reference_url or cfg.get("referenceUrl", ""),
             "AUDIT_TEST_URL": a.test_url or cfg.get("testUrl", ""),
             "AUDIT_SELECT": a.select or "",
-            "AUDIT_ASYNC_CAPTURE_LIMIT": os.environ.get("AUDIT_ASYNC_CAPTURE_LIMIT", "1"),
+            "AUDIT_ASYNC_CAPTURE_LIMIT": os.environ.get("AUDIT_ASYNC_CAPTURE_LIMIT", "4"),
             "AUDIT_ASYNC_COMPARE_LIMIT": os.environ.get("AUDIT_ASYNC_COMPARE_LIMIT", "4"),
         }.items():
             env[key] = val
@@ -292,11 +292,24 @@ def main():
                 a.command,
                 "/config/" + config.name,
             ]
+            # A fixed ceiling silently truncates large catalogues: a serial
+            # capture of 30 scenarios plus a full stability repeat exceeds 300s,
+            # which surfaces as an unexplained cancellation rather than a
+            # diagnosable failure. Keep 300s as the default, but let a large
+            # route set raise it.
             try:
-                proc = subprocess.run(cmd, env=env, timeout=300)
+                audit_timeout = float(os.environ.get("AUDIT_TIMEOUT_SECONDS", "300"))
+            except ValueError:
+                audit_timeout = 300.0
+            try:
+                proc = subprocess.run(cmd, env=env, timeout=audit_timeout)
                 code = proc.returncode
             except subprocess.TimeoutExpired:
-                print("Visual audit container timed out after 300 seconds", file=sys.stderr)
+                print(
+                    f"Visual audit container timed out after {audit_timeout:g} seconds; "
+                    "raise AUDIT_TIMEOUT_SECONDS for large scenario catalogs",
+                    file=sys.stderr,
+                )
                 subprocess.run(
                     prefix + ["down", "--timeout", "5"],
                     env=env,
